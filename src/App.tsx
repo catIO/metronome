@@ -49,8 +49,9 @@ function App() {
     2: Array(beatsPerMeasure * subdivision).fill(false), // Initialize with all squares unselected
   });
   const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>({
-    1: { frequency: 1000, gain: 0.5 }, // Higher pitch for main beats
-    2: { frequency: 500, gain: 0.3 },  // Lower pitch for subdivisions
+    0: { frequency: 1000, gain: 0.5 }, // Main beat sound
+    1: { frequency: 800, gain: 0.4 },  // First division row sound
+    2: { frequency: 600, gain: 0.3 },  // Second division row sound
   });
   const audioContext = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -205,7 +206,7 @@ function App() {
       const newPattern: BeatPattern = {};
       customSubdivisions.forEach((sub) => {
         // Each row should have the same number of columns as beatsPerMeasure * subdivision
-        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(true);  // Initialize all squares as selected
+        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(sub === 1);  // Initialize first row as selected, second row as unselected
         // Copy existing values if they exist
         if (prev[sub]) {
           prev[sub]?.forEach((value, index) => {
@@ -305,7 +306,7 @@ function App() {
           </div>
           
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-white mb-2">Metronome</h1>
+            <h1 className="text-4xl font-bold text-white mb-2">Rhythm Weaver</h1>
             <p className="text-blue-200">Keep your rhythm perfect</p>
           </div>
 
@@ -464,12 +465,52 @@ function App() {
               </div>
               
               <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-white/5">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white font-medium">Main Beat</span>
+                    <button
+                      onClick={() => playClick(0)}
+                      className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                    >
+                      <GraphicEqIcon fontSize="small" />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Frequency: {subdivisionSounds[0]?.frequency}Hz
+                      </label>
+                      <input
+                        type="range"
+                        min="220"
+                        max="1760"
+                        value={subdivisionSounds[0]?.frequency}
+                        onChange={(e) => updateSoundSettings(0, 'frequency', Number(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Volume: {Math.round((subdivisionSounds[0]?.gain || 0) * 100)}%
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={(subdivisionSounds[0]?.gain || 0) * 100}
+                        onChange={(e) => updateSoundSettings(0, 'gain', Number(e.target.value) / 100)}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {customSubdivisions.map((sub) => {
                   const sound = subdivisionSounds[sub] || { frequency: 440, gain: 0.3 };
                   return (
                     <div key={sub} className="p-4 rounded-xl bg-white/5">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-white font-medium">Division {sub}</span>
+                        <span className="text-white font-medium">Row {sub}</span>
                         <button
                           onClick={() => playClick(sub)}
                           className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
