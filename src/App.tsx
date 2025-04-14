@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import AddIcon from '@mui/icons-material/Add';
@@ -21,6 +21,9 @@ type BeatPattern = {
 type SoundSettings = {
   frequency: number;
   gain: number;
+  filterType?: string;
+  filterFrequency?: number;
+  filterQ?: number;
 };
 
 type SubdivisionSounds = {
@@ -44,14 +47,39 @@ function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSoundSettings, setShowSoundSettings] = useState(false);
   const [customSubdivisions, setCustomSubdivisions] = useState<Subdivision[]>([1, 2]);
-  const [advancedPattern, setAdvancedPattern] = useState<BeatPattern>({
-    1: Array(beatsPerMeasure * subdivision).fill(true),  // Initialize with all squares selected
-    2: Array(beatsPerMeasure * subdivision).fill(false), // Initialize with all squares unselected
+  const [advancedPattern, setAdvancedPattern] = useState<BeatPattern>(() => {
+    // Try to load the pattern from localStorage
+    const savedPattern = localStorage.getItem('soundPattern');
+    if (savedPattern) {
+      try {
+        return JSON.parse(savedPattern);
+      } catch (e) {
+        console.error('Failed to parse saved pattern:', e);
+      }
+    }
+    // Default pattern if nothing is saved
+    return {
+      0: Array(beatsPerMeasure * subdivision).fill(true),  // Main beat row
+      1: Array(beatsPerMeasure * subdivision).fill(true),  // First division row
+      2: Array(beatsPerMeasure * subdivision).fill(false), // Second division row
+    };
   });
-  const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>({
-    0: { frequency: 1000, gain: 0.5 }, // Main beat sound
-    1: { frequency: 800, gain: 0.4 },  // First division row sound
-    2: { frequency: 600, gain: 0.3 },  // Second division row sound
+  const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>(() => {
+    // Try to load sound settings from localStorage
+    const savedSettings = localStorage.getItem('soundSettings');
+    if (savedSettings) {
+      try {
+        return JSON.parse(savedSettings);
+      } catch (e) {
+        console.error('Failed to parse saved sound settings:', e);
+      }
+    }
+    // Default sound settings if nothing is saved
+    return {
+      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1 }, // Main beat sound
+      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // First division row sound
+      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // Second division row sound
+    };
   });
   const audioContext = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -71,17 +99,40 @@ function App() {
   }, [bpm]);
 
   const playClick = (subdivisionValue: Subdivision) => {
-    if (!audioContext.current) return;
+    console.log('playClick called with subdivisionValue:', subdivisionValue);
+    console.log('Sound settings for this subdivision:', subdivisionSounds[subdivisionValue]);
+    
+    if (!audioContext.current) {
+      console.error('AudioContext is not initialized');
+      return;
+    }
 
-    const soundSettings = subdivisionSounds[subdivisionValue] || { frequency: 440, gain: 0.3 };
+    const soundSettings = subdivisionSounds[subdivisionValue] || { 
+      frequency: 440, 
+      gain: 0.3,
+      filterType: 'none',
+      filterFrequency: 1000,
+      filterQ: 1
+    };
+    console.log('Using sound settings:', soundSettings);
+    
     const oscillator = audioContext.current.createOscillator();
     const gainNode = audioContext.current.createGain();
+    const filter = audioContext.current.createBiquadFilter();
 
-    oscillator.connect(gainNode);
+    oscillator.connect(filter);
+    filter.connect(gainNode);
     gainNode.connect(audioContext.current.destination);
 
     oscillator.frequency.value = soundSettings.frequency;
     gainNode.gain.value = soundSettings.gain;
+
+    // Apply filter settings
+    if (soundSettings.filterType && soundSettings.filterType !== 'none') {
+      filter.type = soundSettings.filterType as BiquadFilterType;
+      filter.frequency.value = soundSettings.filterFrequency || 1000;
+      filter.Q.value = soundSettings.filterQ || 1;
+    }
 
     oscillator.start();
     oscillator.stop(audioContext.current.currentTime + 0.1);
@@ -100,29 +151,32 @@ function App() {
         // Get the pattern array
         const pattern = advancedPattern[1] || [];
         const pattern2 = advancedPattern[2] || [];
+        const mainBeatPattern = advancedPattern[0] || [];
         
         // Check if the current square is selected
         const isSelected = pattern[currentIndex];
         const isSelected2 = pattern2[currentIndex];
+        const isMainBeatSelected = mainBeatPattern[currentIndex];
         const isMainBeat = currentIndex % subdivision === 0;
-        console.log(`Current square: ${currentIndex + 1}, Selected: ${isSelected}, Selected2: ${isSelected2}, Main beat: ${isMainBeat}`);
+        console.log(`Current square: ${currentIndex + 1}, Selected: ${isSelected}, Selected2: ${isSelected2}, Main beat selected: ${isMainBeatSelected}, Main beat: ${isMainBeat}`);
         
         // Update visual indicators first
         setCurrentBeat(Math.floor(currentIndex / subdivision));
         setCurrentSubdivision(currentIndex % subdivision);
         
-        // Then play sounds if selected
-        if (isSelected) {
-          // Play main beat sound or subdivision sound
-          const soundType = isMainBeat ? 1 : 2;
-          console.log(`Playing ${isMainBeat ? 'main' : 'subdivision'} sound at square ${currentIndex + 1}`);
-          playClick(soundType);
-        }
-        
+        // Then play sounds if selected - only the lowest selected row should play
         if (isSelected2) {
-          // Play the second pattern sound
+          // Play the second pattern sound (lowest row)
           console.log(`Playing second pattern sound at square ${currentIndex + 1}`);
           playClick(2);
+        } else if (isSelected) {
+          // Play first division sound (middle row)
+          console.log(`Playing first division sound at square ${currentIndex + 1}`);
+          playClick(1);
+        } else if (isMainBeatSelected) {
+          // Play main beat sound (top row)
+          console.log(`Playing main beat sound at square ${currentIndex + 1}`);
+          playClick(0);
         }
 
         // Move to next square for the next tick
@@ -186,7 +240,13 @@ function App() {
     }));
     setSubdivisionSounds((prev) => ({
       ...prev,
-      [newSubdivision]: { frequency: 440 - (newSubdivision * 50), gain: 0.3 } as SoundSettings,
+      [newSubdivision]: { 
+        frequency: 440 - (newSubdivision * 50), 
+        gain: 0.3,
+        filterType: 'none',
+        filterFrequency: 1000,
+        filterQ: 1
+      } as SoundSettings,
     }));
   };
 
@@ -204,9 +264,9 @@ function App() {
     // Update pattern when beatsPerMeasure or subdivision changes
     setAdvancedPattern((prev) => {
       const newPattern: BeatPattern = {};
-      customSubdivisions.forEach((sub) => {
+      [0, ...customSubdivisions].forEach((sub) => {
         // Each row should have the same number of columns as beatsPerMeasure * subdivision
-        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(sub === 1);  // Initialize first row as selected, second row as unselected
+        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(sub === 0 || sub === 1);  // Initialize main beat and first row as selected
         // Copy existing values if they exist
         if (prev[sub]) {
           prev[sub]?.forEach((value, index) => {
@@ -288,6 +348,114 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isEditingBpm, showSoundSettings]);
+
+  // Save pattern to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('soundPattern', JSON.stringify(advancedPattern));
+  }, [advancedPattern]);
+
+  // Save sound settings to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('soundSettings', JSON.stringify(subdivisionSounds));
+  }, [subdivisionSounds]);
+
+  // Add a function to clear corrupted localStorage data
+  const clearCorruptedLocalStorage = useCallback(() => {
+    console.log('Clearing corrupted localStorage data');
+    localStorage.removeItem('soundPattern');
+    localStorage.removeItem('soundSettings');
+    localStorage.removeItem('bpm');
+    
+    // Reset state to defaults
+    setAdvancedPattern({
+      0: Array(beatsPerMeasure * subdivision).fill(true),  // Main beat row
+      1: Array(beatsPerMeasure * subdivision).fill(true),  // First division row
+      2: Array(beatsPerMeasure * subdivision).fill(false), // Second division row
+    });
+    
+    setSubdivisionSounds({
+      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1 }, // Main beat sound
+      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // First division row sound
+      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // Second division row sound
+    });
+    
+    setBpm(120);
+  }, [beatsPerMeasure, subdivision]);
+
+  // Add a useEffect to check if localStorage data is corrupted
+  useEffect(() => {
+    // Check if soundSettings is corrupted
+    const checkSoundSettings = () => {
+      try {
+        const savedSettings = localStorage.getItem('soundSettings');
+        if (savedSettings) {
+          const parsedSettings = JSON.parse(savedSettings);
+          // Check if the parsed settings have the required properties
+          for (const key in parsedSettings) {
+            if (!parsedSettings[key].frequency || !parsedSettings[key].gain) {
+              console.error('Sound settings are corrupted');
+              return true;
+            }
+            // Check if filter properties exist, if not add them
+            if (!parsedSettings[key].filterType) {
+              parsedSettings[key].filterType = 'none';
+              parsedSettings[key].filterFrequency = 1000;
+              parsedSettings[key].filterQ = 1;
+              console.log('Added missing filter properties to sound settings');
+            }
+          }
+          // Save the updated settings
+          localStorage.setItem('soundSettings', JSON.stringify(parsedSettings));
+        }
+        return false;
+      } catch (e) {
+        console.error('Failed to parse sound settings:', e);
+        return true;
+      }
+    };
+
+    // Check if soundPattern is corrupted
+    const checkSoundPattern = () => {
+      try {
+        const savedPattern = localStorage.getItem('soundPattern');
+        if (savedPattern) {
+          const parsedPattern = JSON.parse(savedPattern);
+          // Check if the parsed pattern has the required properties
+          for (const key in parsedPattern) {
+            if (!Array.isArray(parsedPattern[key])) {
+              console.error('Sound pattern is corrupted');
+              return true;
+            }
+          }
+        }
+        return false;
+      } catch (e) {
+        console.error('Failed to parse sound pattern:', e);
+        return true;
+      }
+    };
+
+    // If either is corrupted, clear the localStorage data
+    if (checkSoundSettings() || checkSoundPattern()) {
+      clearCorruptedLocalStorage();
+    }
+  }, [clearCorruptedLocalStorage]);
+
+  // Function to convert frequency to note name
+  const getNoteName = (frequency: number): string => {
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const a4 = 440; // A4 is 440Hz
+    const c0 = a4 * Math.pow(2, -4.75); // C0 is the lowest C
+    const halfStepsBelowMiddleC = Math.round(12 * Math.log2(frequency/c0));
+    const octave = Math.floor(halfStepsBelowMiddleC / 12);
+    const noteIndex = halfStepsBelowMiddleC % 12;
+    return `${noteNames[noteIndex]}${octave}`;
+  };
+
+  // Function to get frequency label with note name
+  const getFrequencyLabel = (value: number): string => {
+    return `${value}Hz (${getNoteName(value)})`;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex items-center justify-center p-4">
@@ -424,17 +592,7 @@ function App() {
                   <h2 className="text-xl font-semibold text-white">Sound Pattern</h2>
                 </div>
                 <div className="space-y-2 w-full">
-                  <div className="flex items-center gap-2 mb-4 w-full">
-                    <div className="grid gap-1 w-full" style={{ gridTemplateColumns: `repeat(${beatsPerMeasure * subdivision}, 1fr)` }}>
-                      {Array.from({ length: beatsPerMeasure * subdivision }).map((_, i) => (
-                        <div
-                          key={i}
-                          className={`h-1 ${i % subdivision === 0 ? 'bg-blue-400' : 'bg-white/20'}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  {customSubdivisions.map((sub) => {
+                  {[0, ...customSubdivisions].map((sub) => {
                     const sound = subdivisionSounds[sub] || { frequency: 440, gain: 0.3 };
                     return (
                       <div key={sub} className="flex items-center gap-2 w-full">
@@ -445,9 +603,9 @@ function App() {
                               onClick={() => toggleBeat(sub, i)}
                               className={`h-6 transition-colors ${
                                 advancedPattern[sub]?.[i]
-                                  ? sub === 1 ? 'bg-blue-400 hover:bg-blue-500' : 'bg-amber-600 hover:bg-amber-700'
+                                  ? sub === 0 ? 'bg-blue-400 hover:bg-blue-500' : 'bg-amber-600 hover:bg-amber-700'
                                   : 'bg-white/20 hover:bg-white/30'
-                              } ${sub === 1 && i % subdivision === 0 ? 'border-l-2 border-blue-400' : ''}`}
+                              } ${sub === 0 && i % subdivision === 0 ? 'border-l-2 border-blue-400' : ''}`}
                               title={`${advancedPattern[sub]?.[i] ? `Sound ${sub} on` : 'No sound'} at square ${i + 1}`}
                             />
                           ))}
@@ -478,7 +636,7 @@ function App() {
                   <div className="space-y-3">
                     <div>
                       <label className="text-blue-200 text-sm mb-1 block">
-                        Frequency: {subdivisionSounds[0]?.frequency}Hz
+                        Frequency: {getFrequencyLabel(subdivisionSounds[0]?.frequency || 0)}
                       </label>
                       <input
                         type="range"
@@ -502,6 +660,52 @@ function App() {
                         className="w-full"
                       />
                     </div>
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Filter Type
+                      </label>
+                      <select
+                        value={subdivisionSounds[0]?.filterType || 'none'}
+                        onChange={(e) => updateSoundSettings(0, 'filterType', e.target.value as any)}
+                        className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
+                      >
+                        <option value="none">None</option>
+                        <option value="lowpass">Low Pass</option>
+                        <option value="highpass">High Pass</option>
+                        <option value="bandpass">Band Pass</option>
+                      </select>
+                    </div>
+                    {subdivisionSounds[0]?.filterType !== 'none' && (
+                      <>
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Filter Frequency: {subdivisionSounds[0]?.filterFrequency || 1000}Hz
+                          </label>
+                          <input
+                            type="range"
+                            min="20"
+                            max="20000"
+                            value={subdivisionSounds[0]?.filterFrequency}
+                            onChange={(e) => updateSoundSettings(0, 'filterFrequency', Number(e.target.value))}
+                            className="w-full"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Filter Q: {(subdivisionSounds[0]?.filterQ || 1).toFixed(1)}
+                          </label>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="10"
+                            step="0.1"
+                            value={subdivisionSounds[0]?.filterQ}
+                            onChange={(e) => updateSoundSettings(0, 'filterQ', Number(e.target.value))}
+                            className="w-full"
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -521,7 +725,7 @@ function App() {
                       <div className="space-y-3">
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
-                            Frequency: {sound.frequency}Hz
+                            Frequency: {getFrequencyLabel(sound.frequency)}
                           </label>
                           <input
                             type="range"
@@ -545,6 +749,52 @@ function App() {
                             className="w-full"
                           />
                         </div>
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Filter Type
+                          </label>
+                          <select
+                            value={sound.filterType || 'none'}
+                            onChange={(e) => updateSoundSettings(sub, 'filterType', e.target.value as any)}
+                            className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
+                          >
+                            <option value="none">None</option>
+                            <option value="lowpass">Low Pass</option>
+                            <option value="highpass">High Pass</option>
+                            <option value="bandpass">Band Pass</option>
+                          </select>
+                        </div>
+                        {sound.filterType !== 'none' && (
+                          <>
+                            <div>
+                              <label className="text-blue-200 text-sm mb-1 block">
+                                Filter Frequency: {sound.filterFrequency || 1000}Hz
+                              </label>
+                              <input
+                                type="range"
+                                min="20"
+                                max="20000"
+                                value={sound.filterFrequency}
+                                onChange={(e) => updateSoundSettings(sub, 'filterFrequency', Number(e.target.value))}
+                                className="w-full"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-blue-200 text-sm mb-1 block">
+                                Filter Q: {(sound.filterQ || 1).toFixed(1)}
+                              </label>
+                              <input
+                                type="range"
+                                min="0.1"
+                                max="10"
+                                step="0.1"
+                                value={sound.filterQ}
+                                onChange={(e) => updateSoundSettings(sub, 'filterQ', Number(e.target.value))}
+                                className="w-full"
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
