@@ -11,6 +11,7 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import TuneIcon from '@mui/icons-material/Tune';
+import TimerIcon from '@mui/icons-material/Timer';
 
 type Subdivision = number;
 
@@ -83,6 +84,9 @@ function App() {
   });
   const audioContext = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
+  const [showTimeout, setShowTimeout] = useState(false);
+  const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     audioContext.current = new AudioContext();
@@ -457,6 +461,33 @@ function App() {
     return `${value}Hz (${getNoteName(value)})`;
   };
 
+  // Add this effect to handle the timeout
+  useEffect(() => {
+    if (timeoutMinutes && isPlaying) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
+        setIsPlaying(false);
+        setTimeoutMinutes(null);
+      }, timeoutMinutes * 60 * 1000);
+    }
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [timeoutMinutes, isPlaying]);
+
+  // Add this effect to clear timeout when stopping manually
+  useEffect(() => {
+    if (!isPlaying && timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+      setTimeoutMinutes(null);
+    }
+  }, [isPlaying]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex items-center justify-center p-4">
       <div className="relative" style={{ width: '800px' }}>
@@ -684,11 +715,17 @@ function App() {
                           <input
                             type="range"
                             min="20"
-                            max="20000"
+                            max="8000"
+                            step="1"
                             value={subdivisionSounds[0]?.filterFrequency}
                             onChange={(e) => updateSoundSettings(0, 'filterFrequency', Number(e.target.value))}
                             className="w-full"
                           />
+                          <div className="text-xs text-blue-200/70 mt-1">
+                            {subdivisionSounds[0]?.filterType === 'lowpass' && 'Higher values allow more high frequencies'}
+                            {subdivisionSounds[0]?.filterType === 'highpass' && 'Higher values cut more low frequencies'}
+                            {subdivisionSounds[0]?.filterType === 'bandpass' && 'Center frequency of the band'}
+                          </div>
                         </div>
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
@@ -773,11 +810,17 @@ function App() {
                               <input
                                 type="range"
                                 min="20"
-                                max="20000"
+                                max="8000"
+                                step="1"
                                 value={sound.filterFrequency}
                                 onChange={(e) => updateSoundSettings(sub, 'filterFrequency', Number(e.target.value))}
                                 className="w-full"
                               />
+                              <div className="text-xs text-blue-200/70 mt-1">
+                                {sound.filterType === 'lowpass' && 'Higher values allow more high frequencies'}
+                                {sound.filterType === 'highpass' && 'Higher values cut more low frequencies'}
+                                {sound.filterType === 'bandpass' && 'Center frequency of the band'}
+                              </div>
                             </div>
                             <div>
                               <label className="text-blue-200 text-sm mb-1 block">
@@ -804,24 +847,80 @@ function App() {
           )}
 
           {!showSoundSettings && (
-            <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className={`w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2 transition-colors ${
-                isPlaying
-                  ? 'bg-red-500 hover:bg-red-600'
-                  : 'bg-blue-500 hover:bg-blue-600'
-              }`}
-            >
-              {isPlaying ? (
-                <>
-                  <PauseIcon fontSize="small" /> Stop
-                </>
-              ) : (
-                <>
-                  <PlayArrowIcon fontSize="small" /> Start
-                </>
+            <div className="relative">
+              <button
+                onClick={() => setIsPlaying(!isPlaying)}
+                className={`w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  isPlaying
+                    ? 'bg-red-500 hover:bg-red-600'
+                    : 'bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {isPlaying ? (
+                  <>
+                    <PauseIcon fontSize="small" /> Stop
+                  </>
+                ) : (
+                  <>
+                    <PlayArrowIcon fontSize="small" /> Start
+                  </>
+                )}
+              </button>
+              
+              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowTimeout(!showTimeout);
+                    }}
+                    className="p-2 rounded-full hover:bg-white/10 transition-colors text-white"
+                    title="Set timer"
+                  >
+                    <TimerIcon fontSize="small" />
+                  </button>
+                  
+                  {showTimeout && (
+                    <div 
+                      className="absolute bottom-full right-0 mb-2 bg-slate-800 rounded-lg shadow-xl p-2 min-w-[120px]"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {[5, 10, 15, 30].map((mins) => (
+                        <button
+                          key={mins}
+                          onClick={() => {
+                            setTimeoutMinutes(mins);
+                            setShowTimeout(false);
+                          }}
+                          className={`block w-full text-left px-3 py-1 rounded hover:bg-white/10 text-white ${
+                            timeoutMinutes === mins ? 'bg-white/20' : ''
+                          }`}
+                        >
+                          {mins} min
+                        </button>
+                      ))}
+                      {timeoutMinutes && (
+                        <button
+                          onClick={() => {
+                            setTimeoutMinutes(null);
+                            setShowTimeout(false);
+                          }}
+                          className="block w-full text-left px-3 py-1 rounded hover:bg-white/10 text-red-400"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {timeoutMinutes && (
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-white/70 text-sm">
+                  {timeoutMinutes} min
+                </div>
               )}
-            </button>
+            </div>
           )}
         </div>
       </div>
