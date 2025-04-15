@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#312e81" />
+  
+  <!-- Metronome arm -->
+  <path d="M256 120 L256 320" stroke="white" stroke-width="24" stroke-linecap="round"/>
+  
+  <!-- Metronome base -->
+  <path d="M176 320 L336 320 L256 400 Z" fill="white"/>
+  
+  <!-- Metronome weight -->
+  <circle cx="256" cy="176" r="40" fill="white"/>
+</svg> 
