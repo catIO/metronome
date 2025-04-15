@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background circle -->
-  <circle cx="256" cy="256" r="256" fill="#312e81" />
-  
-  <!-- Metronome arm -->
-  <path d="M256 120 L256 320" stroke="white" stroke-width="24" stroke-linecap="round"/>
-  
-  <!-- Metronome base -->
-  <path d="M176 320 L336 320 L256 400 Z" fill="white"/>
-  
-  <!-- Metronome weight -->
-  <circle cx="256" cy="176" r="40" fill="white"/>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    path { fill: #312e81; }
+    @media (prefers-color-scheme: dark) { path { fill: white; } }
+  </style>
+  <path d="M256 64v225.07c-12.59-7.25-27.09-11.73-42.67-11.73-47.15 0-85.33 38.19-85.33 85.33s38.19 85.33 85.33 85.33 85.33-38.19 85.33-85.33V149.33h85.33V64H256z"/>
 </svg> 
