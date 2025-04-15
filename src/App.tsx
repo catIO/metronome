@@ -25,6 +25,68 @@ type SoundSettings = {
   filterType?: string;
   filterFrequency?: number;
   filterQ?: number;
+  attack?: number;  // Time in seconds for the sound to reach full volume
+  decay?: number;   // Time in seconds for the sound to fade out
+  waveform?: OscillatorType;  // Type of waveform (sine, square, sawtooth, triangle)
+  soundType?: string;  // Name of the selected preset
+};
+
+const SOUND_PRESETS = {
+  'Piano': { 
+    frequency: 440, 
+    gain: 0.5, 
+    filterType: 'lowpass', 
+    filterFrequency: 1500, 
+    filterQ: 0.5,
+    attack: 0.002,
+    decay: 0.1,
+    waveform: 'sine',
+    soundType: 'Piano'
+  },
+  'Wood Block': { 
+    frequency: 180, 
+    gain: 0.5, 
+    filterType: 'bandpass', 
+    filterFrequency: 600, 
+    filterQ: 2.5,
+    attack: 0.005,
+    decay: 0.15,
+    waveform: 'triangle',
+    soundType: 'Wood Block'
+  },
+  'Click': { 
+    frequency: 800, 
+    gain: 0.4, 
+    filterType: 'lowpass', 
+    filterFrequency: 1200, 
+    filterQ: 2,
+    attack: 0.001,
+    decay: 0.05,
+    waveform: 'square',
+    soundType: 'Click'
+  },
+  'Woodpecker': {
+    frequency: 300,
+    gain: 0.6,
+    filterType: 'bandpass',
+    filterFrequency: 800,
+    filterQ: 3,
+    attack: 0.001,
+    decay: 0.05,
+    waveform: 'triangle',
+    soundType: 'Woodpecker'
+  },
+  'Custom': { 
+    frequency: 440, 
+    gain: 0.5, 
+    filterType: 'none', 
+    filterFrequency: 1000, 
+    filterQ: 1,
+    attack: 0.002,
+    decay: 0.1,
+    waveform: 'sine',
+    soundType: 'Custom'
+  }
 };
 
 type SubdivisionSounds = {
@@ -77,9 +139,9 @@ function App() {
     }
     // Default sound settings if nothing is saved
     return {
-      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1 }, // Main beat sound
-      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // First division row sound
-      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // Second division row sound
+      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
+      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
+      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
     };
   });
   const audioContext = useRef<AudioContext | null>(null);
@@ -104,19 +166,23 @@ function App() {
 
   const playClick = (subdivisionValue: Subdivision) => {
     console.log('playClick called with subdivisionValue:', subdivisionValue);
-    console.log('Sound settings for this subdivision:', subdivisionSounds[subdivisionValue]);
+    const currentSettings = subdivisionSounds[subdivisionValue];
+    console.log('Current sound settings:', currentSettings);
     
     if (!audioContext.current) {
       console.error('AudioContext is not initialized');
       return;
     }
 
-    const soundSettings = subdivisionSounds[subdivisionValue] || { 
+    const soundSettings = currentSettings || { 
       frequency: 440, 
       gain: 0.3,
       filterType: 'none',
       filterFrequency: 1000,
-      filterQ: 1
+      filterQ: 1,
+      attack: 0.01,
+      decay: 0.2,
+      waveform: 'sine'
     };
     console.log('Using sound settings:', soundSettings);
     
@@ -124,12 +190,20 @@ function App() {
     const gainNode = audioContext.current.createGain();
     const filter = audioContext.current.createBiquadFilter();
 
-    oscillator.connect(filter);
-    filter.connect(gainNode);
-    gainNode.connect(audioContext.current.destination);
-
+    // Set oscillator type
+    oscillator.type = soundSettings.waveform || 'sine';
     oscillator.frequency.value = soundSettings.frequency;
-    gainNode.gain.value = soundSettings.gain;
+
+    // Set up gain envelope
+    gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
+    gainNode.gain.linearRampToValueAtTime(
+      soundSettings.gain,
+      audioContext.current.currentTime + (soundSettings.attack || 0.01)
+    );
+    gainNode.gain.linearRampToValueAtTime(
+      0,
+      audioContext.current.currentTime + (soundSettings.attack || 0.01) + (soundSettings.decay || 0.2)
+    );
 
     // Apply filter settings
     if (soundSettings.filterType && soundSettings.filterType !== 'none') {
@@ -138,8 +212,12 @@ function App() {
       filter.Q.value = soundSettings.filterQ || 1;
     }
 
+    oscillator.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(audioContext.current.destination);
+
     oscillator.start();
-    oscillator.stop(audioContext.current.currentTime + 0.1);
+    oscillator.stop(audioContext.current.currentTime + (soundSettings.attack || 0.01) + (soundSettings.decay || 0.2));
   };
 
   useEffect(() => {
@@ -227,6 +305,10 @@ function App() {
           i === index ? !enabled : enabled
         ),
       };
+      // Play sound if the beat is being turned on
+      if (newPattern[subdivisionValue]?.[index]) {
+        playClick(subdivisionValue);
+      }
       // Log the state of all squares in the row with sound information
       console.log(`Row ${subdivisionValue} state:`, newPattern[subdivisionValue]?.map(enabled => 
         enabled ? `on:sound ${subdivisionValue}` : 'off:no sound'
@@ -254,7 +336,7 @@ function App() {
     }));
   };
 
-  const updateSoundSettings = (subdivisionValue: Subdivision, type: keyof SoundSettings, value: number) => {
+  const updateSoundSettings = (subdivisionValue: Subdivision, type: keyof SoundSettings, value: any) => {
     setSubdivisionSounds((prev) => ({
       ...prev,
       [subdivisionValue]: {
@@ -262,6 +344,61 @@ function App() {
         [type]: value,
       } as SoundSettings,
     }));
+  };
+
+  const handleSoundTypeChange = (subdivisionValue: Subdivision, soundType: string) => {
+    const preset = SOUND_PRESETS[soundType as keyof typeof SOUND_PRESETS];
+    if (preset) {
+      const newSettings = {
+        ...preset,
+        soundType
+      } as SoundSettings;
+      
+      setSubdivisionSounds((prev) => ({
+        ...prev,
+        [subdivisionValue]: newSettings
+      }));
+      
+      // Play the sound using the preset settings directly
+      if (audioContext.current) {
+        const oscillator = audioContext.current.createOscillator();
+        const gainNode = audioContext.current.createGain();
+        const filter = audioContext.current.createBiquadFilter();
+
+        oscillator.type = (preset.waveform || 'sine') as OscillatorType;
+        oscillator.frequency.value = preset.frequency;
+
+        gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
+        gainNode.gain.linearRampToValueAtTime(
+          preset.gain,
+          audioContext.current.currentTime + (preset.attack || 0.01)
+        );
+        gainNode.gain.linearRampToValueAtTime(
+          0,
+          audioContext.current.currentTime + (preset.attack || 0.01) + (preset.decay || 0.2)
+        );
+
+        if (preset.filterType && preset.filterType !== 'none') {
+          filter.type = preset.filterType as BiquadFilterType;
+          filter.frequency.value = preset.filterFrequency || 1000;
+          filter.Q.value = preset.filterQ || 1;
+        }
+
+        oscillator.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(audioContext.current.destination);
+
+        oscillator.start();
+        oscillator.stop(audioContext.current.currentTime + (preset.attack || 0.01) + (preset.decay || 0.2));
+      }
+      
+      // Save to localStorage
+      const updatedSounds = {
+        ...subdivisionSounds,
+        [subdivisionValue]: newSettings
+      };
+      localStorage.setItem('soundSettings', JSON.stringify(updatedSounds));
+    }
   };
 
   useEffect(() => {
@@ -378,9 +515,9 @@ function App() {
     });
     
     setSubdivisionSounds({
-      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1 }, // Main beat sound
-      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // First division row sound
-      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1 },  // Second division row sound
+      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
+      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
+      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
     });
     
     setBpm(120);
@@ -634,7 +771,11 @@ function App() {
                               onClick={() => toggleBeat(sub, i)}
                               className={`h-6 transition-colors ${
                                 advancedPattern[sub]?.[i]
-                                  ? sub === 0 ? 'bg-blue-400 hover:bg-blue-500' : 'bg-amber-600 hover:bg-amber-700'
+                                  ? sub === 0 
+                                    ? 'bg-blue-400 hover:bg-blue-500' 
+                                    : sub === 1
+                                      ? 'bg-amber-600 hover:bg-amber-700'
+                                      : 'bg-[#F44336] hover:bg-[#D32F2F]'
                                   : 'bg-white/20 hover:bg-white/30'
                               } ${sub === 0 && i % subdivision === 0 ? 'border-l-2 border-blue-400' : ''}`}
                               title={`${advancedPattern[sub]?.[i] ? `Sound ${sub} on` : 'No sound'} at square ${i + 1}`}
@@ -656,15 +797,31 @@ function App() {
               <div className="space-y-4">
                 <div className="p-4 rounded-xl bg-white/5">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-white font-medium">Main Beat</span>
                     <button
-                      onClick={() => playClick(0)}
-                      className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                      onClick={() => {
+                        const sound = subdivisionSounds[0] || { frequency: 440, gain: 0.3 };
+                        playClick(0);
+                      }}
+                      className="p-2 rounded-lg bg-blue-400 hover:bg-blue-500 transition-colors text-white"
                     >
                       <GraphicEqIcon fontSize="small" />
                     </button>
                   </div>
                   <div className="space-y-3">
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Sound Type
+                      </label>
+                      <select
+                        value={subdivisionSounds[0]?.soundType || 'Click'}
+                        onChange={(e) => handleSoundTypeChange(0, e.target.value)}
+                        className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20 mb-4"
+                      >
+                        {Object.keys(SOUND_PRESETS).map((preset) => (
+                          <option key={preset} value={preset}>{preset}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div>
                       <label className="text-blue-200 text-sm mb-1 block">
                         Frequency: {getFrequencyLabel(subdivisionSounds[0]?.frequency || 0)}
@@ -751,15 +908,35 @@ function App() {
                   return (
                     <div key={sub} className="p-4 rounded-xl bg-white/5">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-white font-medium">Row {sub}</span>
                         <button
-                          onClick={() => playClick(sub)}
-                          className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                          onClick={() => {
+                            const sound = subdivisionSounds[sub] || { frequency: 440, gain: 0.3 };
+                            playClick(sub);
+                          }}
+                          className={`p-2 rounded-lg transition-colors text-white ${
+                            sub === 1 
+                              ? 'bg-amber-600 hover:bg-amber-700' 
+                              : 'bg-[#F44336] hover:bg-[#D32F2F]'
+                          }`}
                         >
                           <GraphicEqIcon fontSize="small" />
                         </button>
                       </div>
                       <div className="space-y-3">
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Sound Type
+                          </label>
+                          <select
+                            value={sound.soundType || 'Click'}
+                            onChange={(e) => handleSoundTypeChange(sub, e.target.value)}
+                            className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20 mb-4"
+                          >
+                            {Object.keys(SOUND_PRESETS).map((preset) => (
+                              <option key={preset} value={preset}>{preset}</option>
+                            ))}
+                          </select>
+                        </div>
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
                             Frequency: {getFrequencyLabel(sound.frequency)}
