@@ -23,12 +23,6 @@
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "monochrome"
-    },
-    {
-      "src": "/icons/icon-monochrome.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "monochrome"
     }
   ]
 }
