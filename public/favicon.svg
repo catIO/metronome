@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <path d="M256 64v225.07c-12.59-7.25-27.09-11.73-42.67-11.73-47.15 0-85.33 38.19-85.33 85.33s38.19 85.33 85.33 85.33 85.33-38.19 85.33-85.33V149.33h85.33V64H256z" fill="currentColor"/>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      path { fill: #ffffff; }
+    }
+    @media (prefers-color-scheme: light) {
+      path { fill: #3b82f6; }
+    }
+  </style>
+  <path d="M256 64v225.07c-12.59-7.25-27.09-11.73-42.67-11.73-47.15 0-85.33 38.19-85.33 85.33s38.19 85.33 85.33 85.33 85.33-38.19 85.33-85.33V149.33h85.33V64H256z"/>
 </svg> 
