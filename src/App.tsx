@@ -106,10 +106,25 @@ function App() {
   const [beatsPerMeasure, setBeatsPerMeasure] = useState(4);
   const [currentBeat, setCurrentBeat] = useState(0);
   const [currentSubdivision, setCurrentSubdivision] = useState(0);
-  const [subdivision, setSubdivision] = useState<Subdivision>(1);
+  const [subdivision, setSubdivision] = useState<Subdivision>(() => {
+    const savedSubdivision = localStorage.getItem('subdivision');
+    return savedSubdivision ? parseInt(savedSubdivision) : 1;
+  });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSoundSettings, setShowSoundSettings] = useState(false);
-  const [customSubdivisions, setCustomSubdivisions] = useState<Subdivision[]>([1, 2]);
+  const [customSubdivisions, setCustomSubdivisions] = useState<Subdivision[]>(() => {
+    // Try to load custom subdivisions from localStorage
+    const savedSubdivisions = localStorage.getItem('customSubdivisions');
+    if (savedSubdivisions) {
+      try {
+        return JSON.parse(savedSubdivisions);
+      } catch (e) {
+        console.error('Failed to parse saved subdivisions:', e);
+      }
+    }
+    // Default subdivisions if nothing is saved
+    return [1, 2];
+  });
   const [advancedPattern, setAdvancedPattern] = useState<BeatPattern>(() => {
     // Try to load the pattern from localStorage
     const savedPattern = localStorage.getItem('soundPattern');
@@ -322,7 +337,7 @@ function App() {
     setCustomSubdivisions([...customSubdivisions, newSubdivision]);
     setAdvancedPattern((prev) => ({
       ...prev,
-      [newSubdivision]: Array(subdivision * beatsPerMeasure).fill(false),
+      [newSubdivision]: Array(subdivision * beatsPerMeasure).fill(false), // Keep new subdivision row off
     }));
     setSubdivisionSounds((prev) => ({
       ...prev,
@@ -337,20 +352,65 @@ function App() {
   };
 
   const updateSoundSettings = (subdivisionValue: Subdivision, type: keyof SoundSettings, value: any) => {
-    setSubdivisionSounds((prev) => ({
-      ...prev,
-      [subdivisionValue]: {
-        ...prev[subdivisionValue],
-        [type]: value,
-      } as SoundSettings,
-    }));
+    setSubdivisionSounds((prev) => {
+      const newSettings = {
+        ...prev,
+        [subdivisionValue]: {
+          ...prev[subdivisionValue],
+          [type]: value,
+        } as SoundSettings,
+      };
+      
+      // Play the sound with the updated settings
+      if (audioContext.current) {
+        const sound = newSettings[subdivisionValue];
+        if (sound) {
+          const oscillator = audioContext.current.createOscillator();
+          const gainNode = audioContext.current.createGain();
+          const filter = audioContext.current.createBiquadFilter();
+
+          oscillator.type = (sound.waveform || 'sine') as OscillatorType;
+          oscillator.frequency.value = sound.frequency;
+
+          gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
+          gainNode.gain.linearRampToValueAtTime(
+            sound.gain, // Use the actual gain value
+            audioContext.current.currentTime + (sound.attack || 0.01)
+          );
+          gainNode.gain.linearRampToValueAtTime(
+            0,
+            audioContext.current.currentTime + (sound.attack || 0.01) + (sound.decay || 0.2)
+          );
+
+          if (sound.filterType && sound.filterType !== 'none') {
+            filter.type = sound.filterType as BiquadFilterType;
+            filter.frequency.value = sound.filterFrequency || 1000;
+            filter.Q.value = sound.filterQ || 1;
+          }
+
+          oscillator.connect(filter);
+          filter.connect(gainNode);
+          gainNode.connect(audioContext.current.destination);
+
+          oscillator.start();
+          oscillator.stop(audioContext.current.currentTime + (sound.attack || 0.01) + (sound.decay || 0.2));
+        }
+      }
+      
+      return newSettings;
+    });
   };
 
   const handleSoundTypeChange = (subdivisionValue: Subdivision, soundType: string) => {
     const preset = SOUND_PRESETS[soundType as keyof typeof SOUND_PRESETS];
     if (preset) {
+      // Get the current sound settings to preserve the volume
+      const currentSound = subdivisionSounds[subdivisionValue];
+      const currentGain = currentSound?.gain || 0.3;
+      
       const newSettings = {
         ...preset,
+        gain: currentGain, // Keep the current volume setting
         soundType
       } as SoundSettings;
       
@@ -359,7 +419,7 @@ function App() {
         [subdivisionValue]: newSettings
       }));
       
-      // Play the sound using the preset settings directly
+      // Play the sound using the preset settings but with the preserved volume
       if (audioContext.current) {
         const oscillator = audioContext.current.createOscillator();
         const gainNode = audioContext.current.createGain();
@@ -370,7 +430,7 @@ function App() {
 
         gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
         gainNode.gain.linearRampToValueAtTime(
-          preset.gain,
+          currentGain, // Use the preserved volume
           audioContext.current.currentTime + (preset.attack || 0.01)
         );
         gainNode.gain.linearRampToValueAtTime(
@@ -407,7 +467,7 @@ function App() {
       const newPattern: BeatPattern = {};
       [0, ...customSubdivisions].forEach((sub) => {
         // Each row should have the same number of columns as beatsPerMeasure * subdivision
-        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(sub === 0 || sub === 1);  // Initialize main beat and first row as selected
+        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(sub === 0);  // Only initialize main beat row as selected
         // Copy existing values if they exist
         if (prev[sub]) {
           prev[sub]?.forEach((value, index) => {
@@ -500,12 +560,24 @@ function App() {
     localStorage.setItem('soundSettings', JSON.stringify(subdivisionSounds));
   }, [subdivisionSounds]);
 
+  // Save custom subdivisions to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('customSubdivisions', JSON.stringify(customSubdivisions));
+  }, [customSubdivisions]);
+
+  // Save subdivision to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('subdivision', subdivision.toString());
+  }, [subdivision]);
+
   // Add a function to clear corrupted localStorage data
   const clearCorruptedLocalStorage = useCallback(() => {
     console.log('Clearing corrupted localStorage data');
     localStorage.removeItem('soundPattern');
     localStorage.removeItem('soundSettings');
     localStorage.removeItem('bpm');
+    localStorage.removeItem('customSubdivisions');
+    localStorage.removeItem('subdivision');
     
     // Reset state to defaults
     setAdvancedPattern({
@@ -520,7 +592,9 @@ function App() {
       2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
     });
     
+    setCustomSubdivisions([1, 2]);
     setBpm(120);
+    setSubdivision(1);
   }, [beatsPerMeasure, subdivision]);
 
   // Add a useEffect to check if localStorage data is corrupted
@@ -689,7 +763,7 @@ function App() {
                   {Array.from({ length: beatsPerMeasure }).map((_, beatIndex) => (
                     <div key={`beat-${beatIndex}`} className="flex flex-col gap-1">
                       <div
-                        className={`w-4 h-4 rounded-full transition-colors ${
+                        className={`w-6 h-6 rounded-full transition-colors ${
                           beatIndex === currentBeat
                             ? 'bg-blue-400'
                             : 'bg-white/20'
@@ -700,7 +774,7 @@ function App() {
                           {Array.from({ length: subdivision - 1 }).map((_, subIndex) => (
                             <div
                               key={`sub-${beatIndex}-${subIndex}`}
-                              className={`w-1 h-1 rounded-full transition-colors ${
+                              className={`w-2 h-2 rounded-full transition-colors ${
                                 beatIndex === currentBeat &&
                                 subIndex + 1 === currentSubdivision
                                   ? 'bg-blue-400/70'
@@ -744,7 +818,7 @@ function App() {
                   </button>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-white">{subdivision}</div>
-                    <div className="text-blue-200 text-sm">Division</div>
+                    <div className="text-blue-200 text-sm" title='clicks per beat'>CPB</div>
                   </div>
                   <button
                     onClick={() => adjustSubdivision(true)}
@@ -837,14 +911,14 @@ function App() {
                     </div>
                     <div>
                       <label className="text-blue-200 text-sm mb-1 block">
-                        Volume: {Math.round((subdivisionSounds[0]?.gain || 0) * 100)}%
+                        Volume: {Math.round((subdivisionSounds[0]?.gain || 0) * 200)}%
                       </label>
                       <input
                         type="range"
                         min="0"
-                        max="100"
-                        value={(subdivisionSounds[0]?.gain || 0) * 100}
-                        onChange={(e) => updateSoundSettings(0, 'gain', Number(e.target.value) / 100)}
+                        max="200"
+                        value={(subdivisionSounds[0]?.gain || 0) * 200}
+                        onChange={(e) => updateSoundSettings(0, 'gain', Number(e.target.value) / 200)}
                         className="w-full"
                       />
                     </div>
@@ -900,6 +974,58 @@ function App() {
                         </div>
                       </>
                     )}
+                    
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Waveform
+                      </label>
+                      <select
+                        value={subdivisionSounds[0]?.waveform || 'sine'}
+                        onChange={(e) => updateSoundSettings(0, 'waveform', e.target.value as OscillatorType)}
+                        className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
+                      >
+                        <option value="sine">Sine</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Sawtooth</option>
+                        <option value="triangle">Triangle</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Attack: {(subdivisionSounds[0]?.attack || 0.01).toFixed(3)}s
+                      </label>
+                      <input
+                        type="range"
+                        min="0.001"
+                        max="0.1"
+                        step="0.001"
+                        value={subdivisionSounds[0]?.attack || 0.01}
+                        onChange={(e) => updateSoundSettings(0, 'attack', Number(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="text-xs text-blue-200/70 mt-1">
+                        Time for the sound to reach full volume
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="text-blue-200 text-sm mb-1 block">
+                        Decay: {(subdivisionSounds[0]?.decay || 0.2).toFixed(3)}s
+                      </label>
+                      <input
+                        type="range"
+                        min="0.01"
+                        max="0.5"
+                        step="0.01"
+                        value={subdivisionSounds[0]?.decay || 0.2}
+                        onChange={(e) => updateSoundSettings(0, 'decay', Number(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="text-xs text-blue-200/70 mt-1">
+                        Time for the sound to fade out
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -952,14 +1078,14 @@ function App() {
                         </div>
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
-                            Volume: {Math.round(sound.gain * 100)}%
+                            Volume: {Math.round(sound.gain * 200)}%
                           </label>
                           <input
                             type="range"
                             min="0"
-                            max="100"
-                            value={sound.gain * 100}
-                            onChange={(e) => updateSoundSettings(sub, 'gain', Number(e.target.value) / 100)}
+                            max="200"
+                            value={sound.gain * 200}
+                            onChange={(e) => updateSoundSettings(sub, 'gain', Number(e.target.value) / 200)}
                             className="w-full"
                           />
                         </div>
@@ -1015,6 +1141,58 @@ function App() {
                             </div>
                           </>
                         )}
+                        
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Waveform
+                          </label>
+                          <select
+                            value={sound.waveform || 'sine'}
+                            onChange={(e) => updateSoundSettings(sub, 'waveform', e.target.value as OscillatorType)}
+                            className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
+                          >
+                            <option value="sine">Sine</option>
+                            <option value="square">Square</option>
+                            <option value="sawtooth">Sawtooth</option>
+                            <option value="triangle">Triangle</option>
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Attack: {(sound.attack || 0.01).toFixed(3)}s
+                          </label>
+                          <input
+                            type="range"
+                            min="0.001"
+                            max="0.1"
+                            step="0.001"
+                            value={sound.attack || 0.01}
+                            onChange={(e) => updateSoundSettings(sub, 'attack', Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className="text-xs text-blue-200/70 mt-1">
+                            Time for the sound to reach full volume
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label className="text-blue-200 text-sm mb-1 block">
+                            Decay: {(sound.decay || 0.2).toFixed(3)}s
+                          </label>
+                          <input
+                            type="range"
+                            min="0.01"
+                            max="0.5"
+                            step="0.01"
+                            value={sound.decay || 0.2}
+                            onChange={(e) => updateSoundSettings(sub, 'decay', Number(e.target.value))}
+                            className="w-full"
+                          />
+                          <div className="text-xs text-blue-200/70 mt-1">
+                            Time for the sound to fade out
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );
