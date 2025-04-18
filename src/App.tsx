@@ -100,6 +100,15 @@ const SOUND_PRESETS = {
   }
 };
 
+const TAGLINES = [
+  "Keep your rhythm perfect",
+  "Stay in sync",
+  "Rhythm is life",
+  "Don’t skip a beat",
+  "Beat it like a pro",
+  "Keep the beat alive"
+];
+
 type SubdivisionSounds = {
   [key in Subdivision]?: SoundSettings;
 };
@@ -175,6 +184,10 @@ function App() {
   const [showTimeout, setShowTimeout] = useState(false);
   const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [tagline, setTagline] = useState(() => {
+    const randomIndex = Math.floor(Math.random() * TAGLINES.length);
+    return TAGLINES[randomIndex];
+  });
 
   useEffect(() => {
     audioContext.current = new AudioContext();
@@ -728,7 +741,7 @@ function App() {
           
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-white mb-2">Rhythm Weaver</h1>
-            <p className="text-blue-200">Keep your rhythm perfect</p>
+            <p className="text-blue-200">{tagline}</p>
           </div>
 
           {!showSoundSettings ? (
