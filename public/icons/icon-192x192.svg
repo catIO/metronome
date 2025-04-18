@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="96" cy="96" r="96" fill="#303F9F"/>
-  <path d="M96 24v84.4c-4.72-2.72-10.16-4.4-16-4.4-17.68 0-32 14.32-32 32s14.32 32 32 32 32-14.32 32-32V56h32V24H96z" fill="white"/>
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="96" cy="96" r="96" fill="#3b82f6"/>
+  
+  <!-- Sound waves -->
+  <g transform="translate(48, 48)" fill="white">
+    <!-- Center bar -->
+    <rect x="48" y="24" width="6" height="48" rx="3"/>
+    <!-- Left bars -->
+    <rect x="24" y="36" width="6" height="36" rx="3"/>
+    <rect x="9" y="42" width="6" height="18" rx="3"/>
+    <!-- Right bars -->
+    <rect x="72" y="36" width="6" height="36" rx="3"/>
+    <rect x="87" y="42" width="6" height="18" rx="3"/>
+  </g>
 </svg> 

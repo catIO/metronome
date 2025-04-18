@@ -76,6 +76,17 @@ const SOUND_PRESETS = {
     waveform: 'triangle',
     soundType: 'Woodpecker'
   },
+  'Bird': {
+    frequency: 2000,
+    gain: 0.3,
+    filterType: 'bandpass',
+    filterFrequency: 3000,
+    filterQ: 6,
+    attack: 0.0005,
+    decay: 0.02,
+    waveform: 'sine',
+    soundType: 'Bird'
+  },
   'Custom': { 
     frequency: 440, 
     gain: 0.5, 
