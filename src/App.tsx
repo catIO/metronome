@@ -12,6 +12,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import TuneIcon from '@mui/icons-material/Tune';
 import TimerIcon from '@mui/icons-material/Timer';
+import UpdateIcon from '@mui/icons-material/Update';
 
 type Subdivision = number;
 
@@ -25,16 +26,27 @@ type SoundSettings = {
   filterType?: string;
   filterFrequency?: number;
   filterQ?: number;
-  attack?: number;  // Time in seconds for the sound to reach full volume
-  decay?: number;   // Time in seconds for the sound to fade out
-  waveform?: OscillatorType;  // Type of waveform (sine, square, sawtooth, triangle)
-  soundType?: string;  // Name of the selected preset
+  attack?: number;
+  decay?: number;
+  waveform?: OscillatorType;
+  soundType?: string;
+};
+
+type SavedSettings = {
+  id: string;
+  name: string;
+  bpm: number;
+  beatsPerMeasure: number;
+  subdivision: number;
+  advancedPattern: BeatPattern;
+  subdivisionSounds: SubdivisionSounds;
+  customSubdivisions: Subdivision[];
 };
 
 const SOUND_PRESETS = {
   'Piano': { 
     frequency: 440, 
-    gain: 0.5, 
+    gain: 1.5, 
     filterType: 'lowpass', 
     filterFrequency: 1500, 
     filterQ: 0.5,
@@ -45,7 +57,7 @@ const SOUND_PRESETS = {
   },
   'Wood Block': { 
     frequency: 180, 
-    gain: 0.5, 
+    gain: 1.5, 
     filterType: 'bandpass', 
     filterFrequency: 600, 
     filterQ: 2.5,
@@ -56,7 +68,7 @@ const SOUND_PRESETS = {
   },
   'Click': { 
     frequency: 800, 
-    gain: 0.4, 
+    gain: 1.5, 
     filterType: 'lowpass', 
     filterFrequency: 1200, 
     filterQ: 2,
@@ -67,7 +79,7 @@ const SOUND_PRESETS = {
   },
   'Woodpecker': {
     frequency: 300,
-    gain: 0.6,
+    gain: 1.5,
     filterType: 'bandpass',
     filterFrequency: 800,
     filterQ: 3,
@@ -78,7 +90,7 @@ const SOUND_PRESETS = {
   },
   'Bird': {
     frequency: 2000,
-    gain: 0.3,
+    gain: 1.5,
     filterType: 'bandpass',
     filterFrequency: 3000,
     filterQ: 6,
@@ -104,7 +116,7 @@ const TAGLINES = [
   "Keep your rhythm perfect",
   "Stay in sync",
   "Rhythm is life",
-  "Don’t skip a beat",
+  "Don't skip a beat",
   "Beat it like a pro",
   "Keep the beat alive"
 ];
@@ -117,13 +129,15 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(() => {
     const savedBpm = localStorage.getItem('bpm');
-    console.log('Initializing BPM from localStorage:', savedBpm);
     return savedBpm ? parseInt(savedBpm) : 120;
   });
   const [isEditingBpm, setIsEditingBpm] = useState(false);
   const [tempBpm, setTempBpm] = useState('120');
   const bpmInputRef = useRef<HTMLInputElement>(null);
-  const [beatsPerMeasure, setBeatsPerMeasure] = useState(4);
+  const [beatsPerMeasure, setBeatsPerMeasure] = useState(() => {
+    const savedBeats = localStorage.getItem('beatsPerMeasure');
+    return savedBeats ? parseInt(savedBeats) : 4;
+  });
   const [currentBeat, setCurrentBeat] = useState(0);
   const [currentSubdivision, setCurrentSubdivision] = useState(0);
   const [subdivision, setSubdivision] = useState<Subdivision>(() => {
@@ -162,8 +176,13 @@ function App() {
       2: Array(beatsPerMeasure * subdivision).fill(false), // Second division row
     };
   });
+  const [globalVolume, setGlobalVolume] = useState(() => {
+    const saved = localStorage.getItem('globalVolume');
+    return saved ? parseFloat(saved) : 0.75; // Default to 50% volume (0.75 gain = 50% on slider)
+  });
+  
   const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>(() => {
-    // Try to load sound settings from localStorage
+    // Try to load sound settings from localStorage first
     const savedSettings = localStorage.getItem('soundSettings');
     if (savedSettings) {
       try {
@@ -172,14 +191,16 @@ function App() {
         console.error('Failed to parse saved sound settings:', e);
       }
     }
+    
     // Default sound settings if nothing is saved
     return {
-      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
-      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
-      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
+      0: { frequency: 1000, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
+      1: { frequency: 800, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
+      2: { frequency: 600, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
     };
   });
   const audioContext = useRef<AudioContext | null>(null);
+  const masterGainNode = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
   const [showTimeout, setShowTimeout] = useState(false);
   const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(null);
@@ -188,9 +209,22 @@ function App() {
     const randomIndex = Math.floor(Math.random() * TAGLINES.length);
     return TAGLINES[randomIndex];
   });
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [settingsName, setSettingsName] = useState('');
+  const [editingSettingsId, setEditingSettingsId] = useState<string | null>(null);
+  const [savedSettings, setSavedSettings] = useState<SavedSettings[]>(() => {
+    const saved = localStorage.getItem('savedSettings');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const startTimeRef = useRef<number | null>(null);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     audioContext.current = new AudioContext();
+    masterGainNode.current = audioContext.current.createGain();
+    masterGainNode.current.connect(audioContext.current.destination);
+    masterGainNode.current.gain.value = globalVolume;
     return () => {
       if (audioContext.current) {
         audioContext.current.close();
@@ -199,17 +233,13 @@ function App() {
   }, []);
 
   useEffect(() => {
-    console.log('Saving BPM to localStorage:', bpm);
     localStorage.setItem('bpm', bpm.toString());
   }, [bpm]);
 
-  const playClick = (subdivisionValue: Subdivision) => {
-    console.log('playClick called with subdivisionValue:', subdivisionValue);
+  const playClick = useCallback((subdivisionValue: Subdivision) => {
     const currentSettings = subdivisionSounds[subdivisionValue];
-    console.log('Current sound settings:', currentSettings);
     
     if (!audioContext.current) {
-      console.error('AudioContext is not initialized');
       return;
     }
 
@@ -223,7 +253,6 @@ function App() {
       decay: 0.2,
       waveform: 'sine'
     };
-    console.log('Using sound settings:', soundSettings);
     
     const oscillator = audioContext.current.createOscillator();
     const gainNode = audioContext.current.createGain();
@@ -253,11 +282,11 @@ function App() {
 
     oscillator.connect(filter);
     filter.connect(gainNode);
-    gainNode.connect(audioContext.current.destination);
+    gainNode.connect(masterGainNode.current!);
 
     oscillator.start();
     oscillator.stop(audioContext.current.currentTime + (soundSettings.attack || 0.01) + (soundSettings.decay || 0.2));
-  };
+  }, [subdivisionSounds]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -279,7 +308,6 @@ function App() {
         const isSelected2 = pattern2[currentIndex];
         const isMainBeatSelected = mainBeatPattern[currentIndex];
         const isMainBeat = currentIndex % subdivision === 0;
-        console.log(`Current square: ${currentIndex + 1}, Selected: ${isSelected}, Selected2: ${isSelected2}, Main beat selected: ${isMainBeatSelected}, Main beat: ${isMainBeat}`);
         
         // Update visual indicators first
         setCurrentBeat(Math.floor(currentIndex / subdivision));
@@ -288,21 +316,17 @@ function App() {
         // Then play sounds if selected - only the lowest selected row should play
         if (isSelected2) {
           // Play the second pattern sound (lowest row)
-          console.log(`Playing second pattern sound at square ${currentIndex + 1}`);
           playClick(2);
         } else if (isSelected) {
           // Play first division sound (middle row)
-          console.log(`Playing first division sound at square ${currentIndex + 1}`);
           playClick(1);
         } else if (isMainBeatSelected) {
           // Play main beat sound (top row)
-          console.log(`Playing main beat sound at square ${currentIndex + 1}`);
           playClick(0);
         }
 
         // Move to next square for the next tick
         currentIndex = (currentIndex + 1) % (beatsPerMeasure * subdivision);
-        console.log(`Moving to square ${currentIndex + 1}`);
       };
 
       // Start immediately
@@ -375,7 +399,7 @@ function App() {
     }));
   };
 
-  const updateSoundSettings = (subdivisionValue: Subdivision, type: keyof SoundSettings, value: any) => {
+  const updateSoundSettings = useCallback((subdivisionValue: Subdivision, type: keyof SoundSettings, value: any) => {
     setSubdivisionSounds((prev) => {
       const newSettings = {
         ...prev,
@@ -414,7 +438,7 @@ function App() {
 
           oscillator.connect(filter);
           filter.connect(gainNode);
-          gainNode.connect(audioContext.current.destination);
+          gainNode.connect(masterGainNode.current!);
 
           oscillator.start();
           oscillator.stop(audioContext.current.currentTime + (sound.attack || 0.01) + (sound.decay || 0.2));
@@ -423,9 +447,9 @@ function App() {
       
       return newSettings;
     });
-  };
+  }, [subdivisionSounds]);
 
-  const handleSoundTypeChange = (subdivisionValue: Subdivision, soundType: string) => {
+  const handleSoundTypeChange = useCallback((subdivisionValue: Subdivision, soundType: string) => {
     const preset = SOUND_PRESETS[soundType as keyof typeof SOUND_PRESETS];
     if (preset) {
       // Get the current sound settings to preserve the volume
@@ -470,7 +494,7 @@ function App() {
 
         oscillator.connect(filter);
         filter.connect(gainNode);
-        gainNode.connect(audioContext.current.destination);
+        gainNode.connect(masterGainNode.current!);
 
         oscillator.start();
         oscillator.stop(audioContext.current.currentTime + (preset.attack || 0.01) + (preset.decay || 0.2));
@@ -483,7 +507,7 @@ function App() {
       };
       localStorage.setItem('soundSettings', JSON.stringify(updatedSounds));
     }
-  };
+  }, [subdivisionSounds]);
 
   useEffect(() => {
     // Update pattern when beatsPerMeasure or subdivision changes
@@ -561,8 +585,8 @@ function App() {
   // Add keyboard event listener for spacebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only toggle play/stop if not editing BPM and not in sound settings
-      if (e.code === 'Space' && !isEditingBpm && !showSoundSettings) {
+      // Only toggle play/stop if not editing BPM and not in sound settings and not in save settings dialog
+      if (e.code === 'Space' && !isEditingBpm && !showSoundSettings && !showSaveDialog) {
         e.preventDefault(); // Prevent page scrolling
         setIsPlaying(prev => !prev);
       }
@@ -572,7 +596,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isEditingBpm, showSoundSettings]);
+  }, [isEditingBpm, showSoundSettings, showSaveDialog]);
 
   // Save pattern to localStorage whenever it changes
   useEffect(() => {
@@ -593,6 +617,29 @@ function App() {
   useEffect(() => {
     localStorage.setItem('subdivision', subdivision.toString());
   }, [subdivision]);
+
+  // Save beatsPerMeasure to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('beatsPerMeasure', beatsPerMeasure.toString());
+  }, [beatsPerMeasure]);
+
+  // Save globalVolume to localStorage whenever it changes and update master gain
+  useEffect(() => {
+    localStorage.setItem('globalVolume', globalVolume.toString());
+    
+    // Update master gain node if it exists
+    if (masterGainNode.current) {
+      masterGainNode.current.gain.setValueAtTime(
+        masterGainNode.current.gain.value,
+        audioContext.current?.currentTime || 0
+      );
+      masterGainNode.current.gain.linearRampToValueAtTime(
+        globalVolume,
+        (audioContext.current?.currentTime || 0) + 0.01
+      );
+    }
+  }, [globalVolume]);
+
 
   // Add a function to clear corrupted localStorage data
   const clearCorruptedLocalStorage = useCallback(() => {
@@ -723,26 +770,262 @@ function App() {
     }
   }, [isPlaying]);
 
+  // Add useEffect to handle the timer
+  useEffect(() => {
+    if (isPlaying) {
+      startTimeRef.current = Date.now() - elapsedTime;
+      timerIntervalRef.current = setInterval(() => {
+        if (startTimeRef.current) {
+          setElapsedTime(Date.now() - startTimeRef.current);
+        }
+      }, 1000);
+    } else {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    }
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    };
+  }, [isPlaying, elapsedTime]);
+
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const resetUIState = () => {
+    setIsPlaying(false);
+    setCurrentBeat(0);
+    setCurrentSubdivision(0);
+    setShowSoundSettings(false);
+    setShowAdvanced(false);
+    setShowSaveDialog(false);
+    setSettingsName('');
+    setEditingSettingsId(null);
+    setElapsedTime(0);
+  };
+
+  const saveCurrentSettings = () => {
+    // Create a deep copy of the advancedPattern to ensure it's properly saved
+    const patternCopy: BeatPattern = {};
+    Object.keys(advancedPattern).forEach(key => {
+      const subdivision = parseInt(key);
+      patternCopy[subdivision] = [...(advancedPattern[subdivision] || [])];
+    });
+
+    const newSettings: SavedSettings = {
+      id: editingSettingsId || crypto.randomUUID(),
+      name: settingsName,
+      bpm,
+      beatsPerMeasure,
+      subdivision,
+      advancedPattern: patternCopy,
+      subdivisionSounds: { ...subdivisionSounds },
+      customSubdivisions: [...customSubdivisions]
+    };
+
+    setSavedSettings(prev => {
+      const newSettingsList = editingSettingsId
+        ? prev.map(s => s.id === editingSettingsId ? newSettings : s)
+        : [...prev, newSettings];
+      localStorage.setItem('savedSettings', JSON.stringify(newSettingsList));
+      return newSettingsList;
+    });
+
+    setShowSaveDialog(false);
+    setSettingsName('');
+    setEditingSettingsId(null);
+  };
+
+  const updateSettings = (settings: SavedSettings) => {
+    // Create a deep copy of the current settings
+    const patternCopy: BeatPattern = {};
+    Object.keys(advancedPattern).forEach(key => {
+      const subdivision = parseInt(key);
+      patternCopy[subdivision] = [...(advancedPattern[subdivision] || [])];
+    });
+
+    const updatedSettings: SavedSettings = {
+      ...settings,  // Keep the same ID and name
+      bpm,
+      beatsPerMeasure,
+      subdivision,
+      advancedPattern: patternCopy,
+      subdivisionSounds: { ...subdivisionSounds },
+      customSubdivisions: [...customSubdivisions]
+    };
+
+    setSavedSettings(prev => {
+      const newSettings = prev.map(s => s.id === settings.id ? updatedSettings : s);
+      localStorage.setItem('savedSettings', JSON.stringify(newSettings));
+      return newSettings;
+    });
+  };
+
+  const loadSettings = (settings: SavedSettings) => {
+    // Reset all UI state
+    resetUIState();
+    
+    // Load the saved settings
+    setBpm(settings.bpm);
+    setBeatsPerMeasure(settings.beatsPerMeasure);
+    setSubdivision(settings.subdivision);
+    
+    // Create a deep copy of the pattern to ensure it's properly loaded
+    const patternCopy: BeatPattern = {};
+    Object.keys(settings.advancedPattern).forEach(key => {
+      const subdivision = parseInt(key);
+      patternCopy[subdivision] = [...(settings.advancedPattern[subdivision] || [])];
+    });
+    setAdvancedPattern(patternCopy);
+    
+    setSubdivisionSounds({ ...settings.subdivisionSounds });
+    setCustomSubdivisions([...settings.customSubdivisions]);
+
+    // Set the editing ID to indicate we're editing an existing setting
+    setEditingSettingsId(settings.id);
+    setSettingsName(settings.name);
+  };
+
+  const deleteSettings = (id: string) => {
+    setSavedSettings(prev => {
+      const newSettings = prev.filter(s => s.id !== id);
+      localStorage.setItem('savedSettings', JSON.stringify(newSettings));
+      return newSettings;
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex items-center justify-center p-4">
       <div className="relative" style={{ width: '800px' }}>
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-xl">
           <div className="flex justify-end -mt-2 -mr-2 mb-2">
-            <button
-              onClick={() => {
-                setShowSoundSettings(!showSoundSettings);
-                setShowAdvanced(false);
-              }}
-              className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
-            >
-              {showSoundSettings ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowSaveDialog(true);
+                  setSettingsName('');
+                  setEditingSettingsId(null);
+                }}
+                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                title="Save"
+              >
+                <AddCircleIcon fontSize="small" />
+              </button>
+              <button
+                onClick={() => {
+                  setShowSoundSettings(!showSoundSettings);
+                  setShowAdvanced(false);
+                }}
+                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                title="Settings"
+              >
+                {showSoundSettings ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
+              </button>
+            </div>
           </div>
           
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-white mb-2">Rhythm Weaver</h1>
             <p className="text-blue-200">{tagline}</p>
           </div>
+
+          {showSaveDialog && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-slate-800 p-6 rounded-xl shadow-xl max-w-md w-full">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-semibold text-white">
+                    {editingSettingsId ? 'Edit Settings' : 'Save Settings'}
+                  </h3>
+                  <button
+                    onClick={() => setShowSaveDialog(false)}
+                    className="p-2 rounded-lg hover:bg-white/10 transition-colors text-white"
+                  >
+                    <CloseIcon fontSize="small" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      value={settingsName}
+                      onChange={(e) => setSettingsName(e.target.value)}
+                      placeholder="Enter settings name"
+                      className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
+                    />
+                  </div>
+
+                  {savedSettings.length > 0 && (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      <h4 className="text-white/70 text-sm">Saved Settings</h4>
+                      {savedSettings.map((settings) => (
+                        <div
+                          key={settings.id}
+                          className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                        >
+                          <span className="text-white">{settings.name}</span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => loadSettings(settings)}
+                              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white"
+                              title="Load settings"
+                            >
+                              <PlayArrowIcon fontSize="small" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingSettingsId(settings.id);
+                                setSettingsName(settings.name);
+                                setShowSaveDialog(true);
+                              }}
+                              className="p-2 rounded-lg bg-amber-500 hover:bg-amber-600 transition-colors text-white"
+                              title="Save current settings"
+                            >
+                              <UpdateIcon fontSize="small" />
+                            </button>
+                            <button
+                              onClick={() => deleteSettings(settings.id)}
+                              className="p-2 rounded-lg bg-red-500 hover:bg-red-600 transition-colors text-white"
+                              title="Delete settings"
+                            >
+                              <CloseIcon fontSize="small" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setShowSaveDialog(false);
+                        setSettingsName('');
+                        setEditingSettingsId(null);
+                      }}
+                      className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveCurrentSettings}
+                      disabled={!settingsName.trim()}
+                      className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {!showSoundSettings ? (
             <>
@@ -892,6 +1175,21 @@ function App() {
                 <h2 className="text-xl font-semibold text-white">Sound Settings</h2>
               </div>
               
+              {/* Global Volume Control */}
+              <div className="p-4 rounded-xl bg-white/5 mb-4">
+                <label className="text-blue-200 text-sm mb-2 block">
+                  Volume: {Math.round((globalVolume / 1.5) * 100)}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={(globalVolume / 1.5) * 100}
+                  onChange={(e) => setGlobalVolume((Number(e.target.value) / 100) * 1.5)}
+                  className="w-full"
+                />
+              </div>
+              
               <div className="space-y-4">
                 <div className="p-4 rounded-xl bg-white/5">
                   <div className="flex items-center justify-between mb-2">
@@ -930,19 +1228,6 @@ function App() {
                         max="1760"
                         value={subdivisionSounds[0]?.frequency}
                         onChange={(e) => updateSoundSettings(0, 'frequency', Number(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-blue-200 text-sm mb-1 block">
-                        Volume: {Math.round((subdivisionSounds[0]?.gain || 0) * 200)}%
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="200"
-                        value={(subdivisionSounds[0]?.gain || 0) * 200}
-                        onChange={(e) => updateSoundSettings(0, 'gain', Number(e.target.value) / 200)}
                         className="w-full"
                       />
                     </div>
@@ -1102,19 +1387,6 @@ function App() {
                         </div>
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
-                            Volume: {Math.round(sound.gain * 200)}%
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="200"
-                            value={sound.gain * 200}
-                            onChange={(e) => updateSoundSettings(sub, 'gain', Number(e.target.value) / 200)}
-                            className="w-full"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-blue-200 text-sm mb-1 block">
                             Filter Type
                           </label>
                           <select
@@ -1246,6 +1518,10 @@ function App() {
                 )}
               </button>
               
+              <div className="absolute left-2 top-1/2 -translate-y-1/2 text-white/70 text-sm">
+                {formatTime(elapsedTime)}
+              </div>
+              
               <div className="absolute right-2 top-1/2 -translate-y-1/2">
                 <div className="relative">
                   <button
@@ -1293,12 +1569,6 @@ function App() {
                   )}
                 </div>
               </div>
-              
-              {timeoutMinutes && (
-                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-white/70 text-sm">
-                  {timeoutMinutes} min
-                </div>
-              )}
             </div>
           )}
         </div>
