@@ -1,4 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+
+// TypeScript declaration for Wake Lock API
+interface WakeLockSentinel {
+  release(): Promise<void>;
+  addEventListener(type: 'release', listener: () => void): void;
+}
+
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import AddIcon from '@mui/icons-material/Add';
@@ -202,6 +209,7 @@ function App() {
   const audioContext = useRef<AudioContext | null>(null);
   const masterGainNode = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const [showTimeout, setShowTimeout] = useState(false);
   const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -219,6 +227,7 @@ function App() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const startTimeRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
 
   useEffect(() => {
     audioContext.current = new AudioContext();
@@ -355,7 +364,7 @@ function App() {
 
   const adjustSubdivision = (increase: boolean) => {
     setSubdivision((prev) => {
-      const newValue = increase ? Math.min(prev + 1, 4) : Math.max(prev - 1, 1);
+      const newValue = increase ? Math.min(prev + 1, 8) : Math.max(prev - 1, 1);
       return newValue;
     });
   };
@@ -792,11 +801,57 @@ function App() {
     };
   }, [isPlaying, elapsedTime]);
 
+  // Manage wake lock based on playing state
+  useEffect(() => {
+    if (isPlaying) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      releaseWakeLock();
+    };
+  }, [isPlaying]);
+
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // Wake Lock functions to prevent screen timeout
+  const requestWakeLock = async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        const nav = navigator as any;
+        wakeLockRef.current = await nav.wakeLock.request('screen');
+        setWakeLockActive(true);
+        console.log('Screen wake lock activated');
+        
+        wakeLockRef.current?.addEventListener('release', () => {
+          setWakeLockActive(false);
+          console.log('Screen wake lock released');
+        });
+      }
+    } catch (err) {
+      console.log('Wake lock request failed:', err);
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        setWakeLockActive(false);
+        console.log('Screen wake lock manually released');
+      } catch (err) {
+        console.log('Wake lock release failed:', err);
+      }
+    }
   };
 
   const resetUIState = () => {
@@ -1070,7 +1125,7 @@ function App() {
                   {Array.from({ length: beatsPerMeasure }).map((_, beatIndex) => (
                     <div key={`beat-${beatIndex}`} className="flex flex-col gap-1">
                       <div
-                        className={`w-6 h-6 rounded-full transition-colors ${
+                        className={`w-8 h-8 rounded-full transition-colors ${
                           beatIndex === currentBeat
                             ? 'bg-blue-400'
                             : 'bg-white/20'
@@ -1081,7 +1136,7 @@ function App() {
                           {Array.from({ length: subdivision - 1 }).map((_, subIndex) => (
                             <div
                               key={`sub-${beatIndex}-${subIndex}`}
-                              className={`w-2 h-2 rounded-full transition-colors ${
+                              className={`w-3 h-3 rounded-full transition-colors ${
                                 beatIndex === currentBeat &&
                                 subIndex + 1 === currentSubdivision
                                   ? 'bg-blue-400/70'
