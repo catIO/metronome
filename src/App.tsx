@@ -957,9 +957,9 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex items-center justify-center p-4">
-      <div className="relative" style={{ width: '800px' }}>
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-xl">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex items-center justify-center p-0 sm:p-4">
+      <div className="relative w-full max-w-4xl mx-auto">
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 sm:p-8 shadow-xl">
           <div className="flex justify-end -mt-2 -mr-2 mb-2">
             <div className="flex gap-2">
               <button
