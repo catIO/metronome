@@ -185,7 +185,7 @@ function App() {
   });
   const [globalVolume, setGlobalVolume] = useState(() => {
     const saved = localStorage.getItem('globalVolume');
-    return saved ? parseFloat(saved) : 0.75; // Default to 50% volume (0.75 gain = 50% on slider)
+    return saved ? parseFloat(saved) : 2.0; // Default to 50% volume (2.0 gain = 50% on slider)
   });
   
   const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>(() => {
@@ -225,6 +225,7 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [countdownTime, setCountdownTime] = useState<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [wakeLockActive, setWakeLockActive] = useState(false);
@@ -752,46 +753,40 @@ function App() {
     return `${value}Hz (${getNoteName(value)})`;
   };
 
-  // Add this effect to handle the timeout
-  useEffect(() => {
-    if (timeoutMinutes && isPlaying) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      timeoutRef.current = setTimeout(() => {
-        setIsPlaying(false);
-        setTimeoutMinutes(null);
-      }, timeoutMinutes * 60 * 1000);
-    }
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [timeoutMinutes, isPlaying]);
-
-  // Add this effect to clear timeout when stopping manually
-  useEffect(() => {
-    if (!isPlaying && timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-      setTimeoutMinutes(null);
-    }
-  }, [isPlaying]);
 
   // Add useEffect to handle the timer
   useEffect(() => {
     if (isPlaying) {
-      startTimeRef.current = Date.now() - elapsedTime;
-      timerIntervalRef.current = setInterval(() => {
-        if (startTimeRef.current) {
-          setElapsedTime(Date.now() - startTimeRef.current);
-        }
-      }, 1000);
+      if (timeoutMinutes) {
+        // Countdown timer
+        setCountdownTime(timeoutMinutes * 60 * 1000);
+        timerIntervalRef.current = setInterval(() => {
+          setCountdownTime(prev => {
+            if (prev && prev > 1000) {
+              return prev - 1000;
+            } else {
+              // Timer reached zero, stop the metronome
+              setIsPlaying(false);
+              setCountdownTime(null);
+              setTimeoutMinutes(null);
+              return null;
+            }
+          });
+        }, 1000);
+      } else {
+        // Elapsed timer (fallback)
+        startTimeRef.current = Date.now() - elapsedTime;
+        timerIntervalRef.current = setInterval(() => {
+          if (startTimeRef.current) {
+            setElapsedTime(Date.now() - startTimeRef.current);
+          }
+        }, 1000);
+      }
     } else {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
+      setCountdownTime(null);
     }
 
     return () => {
@@ -799,7 +794,7 @@ function App() {
         clearInterval(timerIntervalRef.current);
       }
     };
-  }, [isPlaying, elapsedTime]);
+  }, [isPlaying, elapsedTime, timeoutMinutes]);
 
   // Manage wake lock based on playing state
   useEffect(() => {
@@ -1233,14 +1228,14 @@ function App() {
               {/* Global Volume Control */}
               <div className="p-4 rounded-xl bg-white/5 mb-4">
                 <label className="text-blue-200 text-sm mb-2 block">
-                  Volume: {Math.round((globalVolume / 1.5) * 100)}%
+                  Volume: {Math.round((globalVolume / 4.0) * 100)}%
                 </label>
                 <input
                   type="range"
                   min="0"
                   max="100"
-                  value={(globalVolume / 1.5) * 100}
-                  onChange={(e) => setGlobalVolume((Number(e.target.value) / 100) * 1.5)}
+                  value={(globalVolume / 4.0) * 100}
+                  onChange={(e) => setGlobalVolume((Number(e.target.value) / 100) * 4.0)}
                   className="w-full"
                 />
               </div>
@@ -1574,7 +1569,7 @@ function App() {
               </button>
               
               <div className="absolute left-2 top-1/2 -translate-y-1/2 text-white/70 text-sm">
-                {formatTime(elapsedTime)}
+                {countdownTime !== null ? formatTime(countdownTime) : formatTime(elapsedTime)}
               </div>
               
               <div className="absolute right-2 top-1/2 -translate-y-1/2">
