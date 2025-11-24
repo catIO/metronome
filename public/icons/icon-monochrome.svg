@@ -1,28 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Filled black circle background (no white border) -->
-  <circle cx="256" cy="256" r="256" fill="#000000"/>
+  <!-- Filled black rounded rectangle background (for macOS rounded corners) -->
+  <rect width="512" height="512" rx="100" ry="100" fill="#000000"/>
   
-  <!-- Audio equalizer bars - 7 vertical bars with varying heights, centered -->
+  <!-- Audio equalizer bars - 5 vertical bars with varying heights, well balanced and centered -->
   <g fill="#FFFFFF">
-    <!-- Bar 1 (shortest) - centered horizontally and vertically -->
-    <rect x="124" y="216" width="24" height="80" rx="12"/>
+    <!-- Bar 1 (shortest, left) - all bars centered vertically at y=256 -->
+    <rect x="94" y="216" width="36" height="80" rx="18"/>
     
-    <!-- Bar 2 -->
-    <rect x="164" y="176" width="24" height="160" rx="12"/>
+    <!-- Bar 2 (medium, left-center) -->
+    <rect x="166" y="176" width="36" height="160" rx="18"/>
     
-    <!-- Bar 3 -->
-    <rect x="204" y="136" width="24" height="240" rx="12"/>
+    <!-- Bar 3 (tallest - center) - perfectly centered at y=256 -->
+    <rect x="238" y="136" width="36" height="240" rx="18"/>
     
-    <!-- Bar 4 (tallest - center) -->
-    <rect x="244" y="96" width="24" height="320" rx="12"/>
+    <!-- Bar 4 (medium, right-center) -->
+    <rect x="310" y="176" width="36" height="160" rx="18"/>
     
-    <!-- Bar 5 -->
-    <rect x="284" y="136" width="24" height="240" rx="12"/>
-    
-    <!-- Bar 6 -->
-    <rect x="324" y="176" width="24" height="160" rx="12"/>
-    
-    <!-- Bar 7 (shortest) -->
-    <rect x="364" y="216" width="24" height="80" rx="12"/>
+    <!-- Bar 5 (shortest, right) -->
+    <rect x="382" y="216" width="36" height="80" rx="18"/>
   </g>
 </svg>
