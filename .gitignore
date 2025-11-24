@@ -67,4 +67,8 @@ junit.xml
 .DS_Store
 *.pem
 .vercel
-.netlify 
+.netlify
+
+# Icon generation utilities
+generate-icons*.js
+generate-icons*.html 
