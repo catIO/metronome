@@ -48,6 +48,7 @@ type SavedSettings = {
   advancedPattern: BeatPattern;
   subdivisionSounds: SubdivisionSounds;
   customSubdivisions: Subdivision[];
+  speedPercentage?: number;
 };
 
 const SOUND_PRESETS = {
@@ -187,6 +188,10 @@ function App() {
     const saved = localStorage.getItem('globalVolume');
     return saved ? parseFloat(saved) : 2.0; // Default to 50% volume (2.0 gain = 50% on slider)
   });
+  const [speedPercentage, setSpeedPercentage] = useState(() => {
+    const saved = localStorage.getItem('speedPercentage');
+    return saved ? parseInt(saved) : 100; // Default to 100% (normal speed)
+  });
   
   const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>(() => {
     // Try to load sound settings from localStorage first
@@ -304,7 +309,7 @@ function App() {
       setCurrentBeat(0);
       setCurrentSubdivision(0);
       
-      const intervalTime = (60 / bpm / subdivision) * 1000;
+      const intervalTime = (60 / bpm / subdivision) * 1000 / (speedPercentage / 100);
       let currentIndex = 0;
       
       const tick = () => {
@@ -357,7 +362,7 @@ function App() {
         clearInterval(timerRef.current);
       }
     };
-  }, [isPlaying, bpm, beatsPerMeasure, subdivision, advancedPattern, subdivisionSounds]);
+  }, [isPlaying, bpm, beatsPerMeasure, subdivision, advancedPattern, subdivisionSounds, speedPercentage]);
 
   const adjustTempo = (amount: number) => {
     setBpm((prev) => Math.min(Math.max(prev + amount, 40), 220));
@@ -650,6 +655,11 @@ function App() {
     }
   }, [globalVolume]);
 
+  // Save speedPercentage to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('speedPercentage', speedPercentage.toString());
+  }, [speedPercentage]);
+
 
   // Add a function to clear corrupted localStorage data
   const clearCorruptedLocalStorage = useCallback(() => {
@@ -877,7 +887,8 @@ function App() {
       subdivision,
       advancedPattern: patternCopy,
       subdivisionSounds: { ...subdivisionSounds },
-      customSubdivisions: [...customSubdivisions]
+      customSubdivisions: [...customSubdivisions],
+      speedPercentage
     };
 
     setSavedSettings(prev => {
@@ -908,7 +919,8 @@ function App() {
       subdivision,
       advancedPattern: patternCopy,
       subdivisionSounds: { ...subdivisionSounds },
-      customSubdivisions: [...customSubdivisions]
+      customSubdivisions: [...customSubdivisions],
+      speedPercentage
     };
 
     setSavedSettings(prev => {
@@ -937,10 +949,18 @@ function App() {
     
     setSubdivisionSounds({ ...settings.subdivisionSounds });
     setCustomSubdivisions([...settings.customSubdivisions]);
+    
+    // Load speed percentage if it exists, otherwise keep current value
+    if (settings.speedPercentage !== undefined) {
+      setSpeedPercentage(settings.speedPercentage);
+    }
 
     // Set the editing ID to indicate we're editing an existing setting
     setEditingSettingsId(settings.id);
     setSettingsName(settings.name);
+    
+    // Start the metronome after loading settings
+    setIsPlaying(true);
   };
 
   const deleteSettings = (id: string) => {
@@ -1146,7 +1166,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="grid grid-cols-3 gap-4 mb-8">
                 <div className="flex justify-between items-center p-4 rounded-xl bg-white/5">
                   <button
                     onClick={() => setBeatsPerMeasure((prev) => Math.max(prev - 1, 2))}
@@ -1182,6 +1202,28 @@ function App() {
                     className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
                   >
                     <KeyboardArrowUpIcon fontSize="small" />
+                  </button>
+                </div>
+
+                <div className="flex justify-between items-center p-4 rounded-xl bg-white/5">
+                  <button
+                    onClick={() => setSpeedPercentage((prev) => Math.max(prev - 5, 5))}
+                    className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                  >
+                    <RemoveIcon fontSize="small" />
+                  </button>
+                  <div className="text-center relative group">
+                    <div className="text-2xl font-bold text-white">{speedPercentage}%</div>
+                    <div className="text-blue-200 text-sm">Speed</div>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 rounded-lg shadow-xl text-white text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                      {Math.round(bpm * (speedPercentage / 100))} BPM
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSpeedPercentage((prev) => Math.min(prev + 5, 200))}
+                    className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                  >
+                    <AddIcon fontSize="small" />
                   </button>
                 </div>
               </div>
