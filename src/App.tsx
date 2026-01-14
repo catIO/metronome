@@ -15,9 +15,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import CloseIcon from '@mui/icons-material/Close';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
-import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
-import TuneIcon from '@mui/icons-material/Tune';
 import TimerIcon from '@mui/icons-material/Timer';
 import UpdateIcon from '@mui/icons-material/Update';
 
@@ -152,7 +150,6 @@ function App() {
     const savedSubdivision = localStorage.getItem('subdivision');
     return savedSubdivision ? parseInt(savedSubdivision) : 1;
   });
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSoundSettings, setShowSoundSettings] = useState(false);
   const [customSubdivisions, setCustomSubdivisions] = useState<Subdivision[]>(() => {
     // Try to load custom subdivisions from localStorage
@@ -217,8 +214,7 @@ function App() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const [showTimeout, setShowTimeout] = useState(false);
   const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [tagline, setTagline] = useState(() => {
+  const [tagline] = useState(() => {
     const randomIndex = Math.floor(Math.random() * TAGLINES.length);
     return TAGLINES[randomIndex];
   });
@@ -233,7 +229,6 @@ function App() {
   const [countdownTime, setCountdownTime] = useState<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [wakeLockActive, setWakeLockActive] = useState(false);
 
   useEffect(() => {
     audioContext.current = new AudioContext();
@@ -322,7 +317,6 @@ function App() {
         const isSelected = pattern[currentIndex];
         const isSelected2 = pattern2[currentIndex];
         const isMainBeatSelected = mainBeatPattern[currentIndex];
-        const isMainBeat = currentIndex % subdivision === 0;
         
         // Update visual indicators first
         setCurrentBeat(Math.floor(currentIndex / subdivision));
@@ -395,24 +389,6 @@ function App() {
     });
   };
 
-  const addNewSubdivision = () => {
-    const newSubdivision = Math.max(...customSubdivisions) + 1;
-    setCustomSubdivisions([...customSubdivisions, newSubdivision]);
-    setAdvancedPattern((prev) => ({
-      ...prev,
-      [newSubdivision]: Array(subdivision * beatsPerMeasure).fill(false), // Keep new subdivision row off
-    }));
-    setSubdivisionSounds((prev) => ({
-      ...prev,
-      [newSubdivision]: { 
-        frequency: 440 - (newSubdivision * 50), 
-        gain: 0.3,
-        filterType: 'none',
-        filterFrequency: 1000,
-        filterQ: 1
-      } as SoundSettings,
-    }));
-  };
 
   const updateSoundSettings = useCallback((subdivisionValue: Subdivision, type: keyof SoundSettings, value: any) => {
     setSubdivisionSounds((prev) => {
@@ -833,11 +809,9 @@ function App() {
       if ('wakeLock' in navigator) {
         const nav = navigator as any;
         wakeLockRef.current = await nav.wakeLock.request('screen');
-        setWakeLockActive(true);
         console.log('Screen wake lock activated');
         
         wakeLockRef.current?.addEventListener('release', () => {
-          setWakeLockActive(false);
           console.log('Screen wake lock released');
         });
       }
@@ -851,7 +825,6 @@ function App() {
       try {
         await wakeLockRef.current.release();
         wakeLockRef.current = null;
-        setWakeLockActive(false);
         console.log('Screen wake lock manually released');
       } catch (err) {
         console.log('Wake lock release failed:', err);
@@ -864,7 +837,6 @@ function App() {
     setCurrentBeat(0);
     setCurrentSubdivision(0);
     setShowSoundSettings(false);
-    setShowAdvanced(false);
     setShowSaveDialog(false);
     setSettingsName('');
     setEditingSettingsId(null);
@@ -902,32 +874,6 @@ function App() {
     setShowSaveDialog(false);
     setSettingsName('');
     setEditingSettingsId(null);
-  };
-
-  const updateSettings = (settings: SavedSettings) => {
-    // Create a deep copy of the current settings
-    const patternCopy: BeatPattern = {};
-    Object.keys(advancedPattern).forEach(key => {
-      const subdivision = parseInt(key);
-      patternCopy[subdivision] = [...(advancedPattern[subdivision] || [])];
-    });
-
-    const updatedSettings: SavedSettings = {
-      ...settings,  // Keep the same ID and name
-      bpm,
-      beatsPerMeasure,
-      subdivision,
-      advancedPattern: patternCopy,
-      subdivisionSounds: { ...subdivisionSounds },
-      customSubdivisions: [...customSubdivisions],
-      speedPercentage
-    };
-
-    setSavedSettings(prev => {
-      const newSettings = prev.map(s => s.id === settings.id ? updatedSettings : s);
-      localStorage.setItem('savedSettings', JSON.stringify(newSettings));
-      return newSettings;
-    });
   };
 
   const loadSettings = (settings: SavedSettings) => {
@@ -991,7 +937,6 @@ function App() {
               <button
                 onClick={() => {
                   setShowSoundSettings(!showSoundSettings);
-                  setShowAdvanced(false);
                 }}
                 className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
                 title="Settings"
@@ -1234,7 +1179,6 @@ function App() {
                 </div>
                 <div className="space-y-2 w-full">
                   {[0, ...customSubdivisions].map((sub) => {
-                    const sound = subdivisionSounds[sub] || { frequency: 440, gain: 0.3 };
                     return (
                       <div key={sub} className="flex items-center gap-2 w-full">
                         <div className="grid gap-1 w-full" style={{ gridTemplateColumns: `repeat(${beatsPerMeasure * subdivision}, 1fr)` }}>
@@ -1287,7 +1231,6 @@ function App() {
                   <div className="flex items-center justify-between mb-2">
                     <button
                       onClick={() => {
-                        const sound = subdivisionSounds[0] || { frequency: 440, gain: 0.3 };
                         playClick(0);
                       }}
                       className="p-2 rounded-lg bg-blue-400 hover:bg-blue-500 transition-colors text-white"
@@ -1437,7 +1380,6 @@ function App() {
                       <div className="flex items-center justify-between mb-2">
                         <button
                           onClick={() => {
-                            const sound = subdivisionSounds[sub] || { frequency: 440, gain: 0.3 };
                             playClick(sub);
                           }}
                           className={`p-2 rounded-lg transition-colors text-white ${
