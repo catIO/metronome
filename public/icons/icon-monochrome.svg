@@ -1,23 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Filled black rounded rectangle background (for macOS squircle style) -->
-  <!-- Large corner radius to match macOS squircle appearance -->
-  <rect width="512" height="512" rx="140" ry="140" fill="#000000"/>
-  
-  <!-- Audio equalizer bars - 5 vertical bars with varying heights, perfectly centered at y=256 -->
-  <g fill="#FFFFFF">
-    <!-- Bar 1 (shortest, left) - height 80, centered at 256: y = 256 - 40 = 216 -->
-    <rect x="94" y="216" width="36" height="80" rx="18"/>
-    
-    <!-- Bar 2 (medium, left-center) - height 160, centered at 256: y = 256 - 80 = 176 -->
-    <rect x="166" y="176" width="36" height="160" rx="18"/>
-    
-    <!-- Bar 3 (tallest - center) - height 240, centered at 256: y = 256 - 120 = 136 -->
-    <rect x="238" y="136" width="36" height="240" rx="18"/>
-    
-    <!-- Bar 4 (medium, right-center) - height 160, centered at 256: y = 256 - 80 = 176 -->
-    <rect x="310" y="176" width="36" height="160" rx="18"/>
-    
-    <!-- Bar 5 (shortest, right) - height 80, centered at 256: y = 256 - 40 = 216 -->
-    <rect x="382" y="216" width="36" height="80" rx="18"/>
+  <g fill="#e3e3e3" transform="translate(256, 256) scale(15.36) translate(-480, 480)">
+    <path d="M280-240v-480h80v480h-80ZM440-80v-800h80v800h-80ZM120-400v-160h80v160h-80Zm480 160v-480h80v480h-80Zm160-160v-160h80v160h-80Z"/>
   </g>
 </svg>

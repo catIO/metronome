@@ -50,33 +50,33 @@ type SavedSettings = {
 };
 
 const SOUND_PRESETS = {
-  'Piano': { 
-    frequency: 440, 
-    gain: 1.5, 
-    filterType: 'lowpass', 
-    filterFrequency: 1500, 
+  'Piano': {
+    frequency: 440,
+    gain: 1.5,
+    filterType: 'lowpass',
+    filterFrequency: 1500,
     filterQ: 0.5,
     attack: 0.002,
     decay: 0.1,
     waveform: 'sine',
     soundType: 'Piano'
   },
-  'Wood Block': { 
-    frequency: 180, 
-    gain: 1.5, 
-    filterType: 'bandpass', 
-    filterFrequency: 600, 
+  'Wood Block': {
+    frequency: 180,
+    gain: 1.5,
+    filterType: 'bandpass',
+    filterFrequency: 600,
     filterQ: 2.5,
     attack: 0.005,
     decay: 0.15,
     waveform: 'triangle',
     soundType: 'Wood Block'
   },
-  'Click': { 
-    frequency: 800, 
-    gain: 1.5, 
-    filterType: 'lowpass', 
-    filterFrequency: 1200, 
+  'Click': {
+    frequency: 800,
+    gain: 1.5,
+    filterType: 'lowpass',
+    filterFrequency: 1200,
     filterQ: 2,
     attack: 0.001,
     decay: 0.05,
@@ -105,11 +105,11 @@ const SOUND_PRESETS = {
     waveform: 'sine',
     soundType: 'Bird'
   },
-  'Custom': { 
-    frequency: 440, 
-    gain: 0.5, 
-    filterType: 'none', 
-    filterFrequency: 1000, 
+  'Custom': {
+    frequency: 440,
+    gain: 0.5,
+    filterType: 'none',
+    filterFrequency: 1000,
     filterQ: 1,
     attack: 0.002,
     decay: 0.1,
@@ -189,7 +189,7 @@ function App() {
     const saved = localStorage.getItem('speedPercentage');
     return saved ? parseInt(saved) : 100; // Default to 100% (normal speed)
   });
-  
+
   const [subdivisionSounds, setSubdivisionSounds] = useState<SubdivisionSounds>(() => {
     // Try to load sound settings from localStorage first
     const savedSettings = localStorage.getItem('soundSettings');
@@ -200,7 +200,7 @@ function App() {
         console.error('Failed to parse saved sound settings:', e);
       }
     }
-    
+
     // Default sound settings if nothing is saved
     return {
       0: { frequency: 1000, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
@@ -230,6 +230,10 @@ function App() {
   const startTimeRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Keep track of previous dimensions to correctly map beat grid mathematically when resized
+  const prevBeatsRef = useRef(beatsPerMeasure);
+  const prevSubdivisionRef = useRef(subdivision);
+
   useEffect(() => {
     audioContext.current = new AudioContext();
     masterGainNode.current = audioContext.current.createGain();
@@ -248,13 +252,13 @@ function App() {
 
   const playClick = useCallback((subdivisionValue: Subdivision) => {
     const currentSettings = subdivisionSounds[subdivisionValue];
-    
+
     if (!audioContext.current) {
       return;
     }
 
-    const soundSettings = currentSettings || { 
-      frequency: 440, 
+    const soundSettings = currentSettings || {
+      frequency: 440,
       gain: 0.3,
       filterType: 'none',
       filterFrequency: 1000,
@@ -263,7 +267,7 @@ function App() {
       decay: 0.2,
       waveform: 'sine'
     };
-    
+
     const oscillator = audioContext.current.createOscillator();
     const gainNode = audioContext.current.createGain();
     const filter = audioContext.current.createBiquadFilter();
@@ -303,25 +307,25 @@ function App() {
       // Reset beat and subdivision counters when starting
       setCurrentBeat(0);
       setCurrentSubdivision(0);
-      
+
       const intervalTime = (60 / bpm / subdivision) * 1000 / (speedPercentage / 100);
       let currentIndex = 0;
-      
+
       const tick = () => {
         // Get the pattern array
         const pattern = advancedPattern[1] || [];
         const pattern2 = advancedPattern[2] || [];
         const mainBeatPattern = advancedPattern[0] || [];
-        
+
         // Check if the current square is selected
         const isSelected = pattern[currentIndex];
         const isSelected2 = pattern2[currentIndex];
         const isMainBeatSelected = mainBeatPattern[currentIndex];
-        
+
         // Update visual indicators first
         setCurrentBeat(Math.floor(currentIndex / subdivision));
         setCurrentSubdivision(currentIndex % subdivision);
-        
+
         // Then play sounds if selected - only the lowest selected row should play
         if (isSelected2) {
           // Play the second pattern sound (lowest row)
@@ -340,7 +344,7 @@ function App() {
 
       // Start immediately
       tick();
-      
+
       // Set up the interval for subsequent ticks
       timerRef.current = window.setInterval(tick, intervalTime);
     } else {
@@ -382,7 +386,7 @@ function App() {
         playClick(subdivisionValue);
       }
       // Log the state of all squares in the row with sound information
-      console.log(`Row ${subdivisionValue} state:`, newPattern[subdivisionValue]?.map(enabled => 
+      console.log(`Row ${subdivisionValue} state:`, newPattern[subdivisionValue]?.map(enabled =>
         enabled ? `on:sound ${subdivisionValue}` : 'off:no sound'
       ));
       return newPattern;
@@ -399,7 +403,7 @@ function App() {
           [type]: value,
         } as SoundSettings,
       };
-      
+
       // Play the sound with the updated settings
       if (audioContext.current) {
         const sound = newSettings[subdivisionValue];
@@ -435,7 +439,7 @@ function App() {
           oscillator.stop(audioContext.current.currentTime + (sound.attack || 0.01) + (sound.decay || 0.2));
         }
       }
-      
+
       return newSettings;
     });
   }, [subdivisionSounds]);
@@ -446,18 +450,18 @@ function App() {
       // Get the current sound settings to preserve the volume
       const currentSound = subdivisionSounds[subdivisionValue];
       const currentGain = currentSound?.gain || 0.3;
-      
+
       const newSettings = {
         ...preset,
         gain: currentGain, // Keep the current volume setting
         soundType
       } as SoundSettings;
-      
+
       setSubdivisionSounds((prev) => ({
         ...prev,
         [subdivisionValue]: newSettings
       }));
-      
+
       // Play the sound using the preset settings but with the preserved volume
       if (audioContext.current) {
         const oscillator = audioContext.current.createOscillator();
@@ -490,7 +494,7 @@ function App() {
         oscillator.start();
         oscillator.stop(audioContext.current.currentTime + (preset.attack || 0.01) + (preset.decay || 0.2));
       }
-      
+
       // Save to localStorage
       const updatedSounds = {
         ...subdivisionSounds,
@@ -504,18 +508,47 @@ function App() {
     // Update pattern when beatsPerMeasure or subdivision changes
     setAdvancedPattern((prev) => {
       const newPattern: BeatPattern = {};
+      const oldBeats = prevBeatsRef.current;
+      const oldSubdivision = prevSubdivisionRef.current;
+
       [0, ...customSubdivisions].forEach((sub) => {
         // Each row should have the same number of columns as beatsPerMeasure * subdivision
-        newPattern[sub] = Array(beatsPerMeasure * subdivision).fill(sub === 0);  // Only initialize main beat row as selected
-        // Copy existing values if they exist
-        if (prev[sub]) {
-          prev[sub]?.forEach((value, index) => {
-            if (index < newPattern[sub]!.length) {
-              newPattern[sub]![index] = value;
+        const newArray = Array(beatsPerMeasure * subdivision).fill(false);
+        const oldArray = prev[sub] || [];
+
+        for (let b = 0; b < beatsPerMeasure; b++) {
+          for (let s = 0; s < subdivision; s++) {
+            const newIndex = b * subdivision + s;
+
+            if (sub === 0) {
+              // The main beat row (row 0) should always be fully selected
+              newArray[newIndex] = true;
+            } else if (b < oldBeats && oldArray.length > 0) {
+              // Map proportionally to the old subdivision grid length
+              // This ensures if you scale 4 -> 3, the musical timing is preserved
+              // If you expand 3 -> 4, the notes populate the closest mathematical beat
+              let oldSubIndex = Math.round(s * (oldSubdivision / subdivision));
+
+              // Bound check just in case
+              if (oldSubIndex >= oldSubdivision) {
+                oldSubIndex = oldSubdivision - 1;
+              }
+
+              const oldIndex = b * oldSubdivision + oldSubIndex;
+              newArray[newIndex] = oldArray[oldIndex] || false;
+            } else {
+              // Fill new, unmapped slots with empty defaults (false for other rows)
+              newArray[newIndex] = false;
             }
-          });
+          }
         }
+
+        newPattern[sub] = newArray;
       });
+
+      // Update refs to new dimensions for next time
+      prevBeatsRef.current = beatsPerMeasure;
+      prevSubdivisionRef.current = subdivision;
       return newPattern;
     });
   }, [beatsPerMeasure, subdivision, customSubdivisions]);
@@ -617,7 +650,7 @@ function App() {
   // Save globalVolume to localStorage whenever it changes and update master gain
   useEffect(() => {
     localStorage.setItem('globalVolume', globalVolume.toString());
-    
+
     // Update master gain node if it exists
     if (masterGainNode.current) {
       masterGainNode.current.gain.setValueAtTime(
@@ -645,20 +678,20 @@ function App() {
     localStorage.removeItem('bpm');
     localStorage.removeItem('customSubdivisions');
     localStorage.removeItem('subdivision');
-    
+
     // Reset state to defaults
     setAdvancedPattern({
       0: Array(beatsPerMeasure * subdivision).fill(true),  // Main beat row
       1: Array(beatsPerMeasure * subdivision).fill(true),  // First division row
       2: Array(beatsPerMeasure * subdivision).fill(false), // Second division row
     });
-    
+
     setSubdivisionSounds({
       0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
       1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
       2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
     });
-    
+
     setCustomSubdivisions([1, 2]);
     setBpm(120);
     setSubdivision(1);
@@ -728,7 +761,7 @@ function App() {
     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const a4 = 440; // A4 is 440Hz
     const c0 = a4 * Math.pow(2, -4.75); // C0 is the lowest C
-    const halfStepsBelowMiddleC = Math.round(12 * Math.log2(frequency/c0));
+    const halfStepsBelowMiddleC = Math.round(12 * Math.log2(frequency / c0));
     const octave = Math.floor(halfStepsBelowMiddleC / 12);
     const noteIndex = halfStepsBelowMiddleC % 12;
     return `${noteNames[noteIndex]}${octave}`;
@@ -810,7 +843,7 @@ function App() {
         const nav = navigator as any;
         wakeLockRef.current = await nav.wakeLock.request('screen');
         console.log('Screen wake lock activated');
-        
+
         wakeLockRef.current?.addEventListener('release', () => {
           console.log('Screen wake lock released');
         });
@@ -879,12 +912,12 @@ function App() {
   const loadSettings = (settings: SavedSettings) => {
     // Reset all UI state
     resetUIState();
-    
+
     // Load the saved settings
     setBpm(settings.bpm);
     setBeatsPerMeasure(settings.beatsPerMeasure);
     setSubdivision(settings.subdivision);
-    
+
     // Create a deep copy of the pattern to ensure it's properly loaded
     const patternCopy: BeatPattern = {};
     Object.keys(settings.advancedPattern).forEach(key => {
@@ -892,10 +925,10 @@ function App() {
       patternCopy[subdivision] = [...(settings.advancedPattern[subdivision] || [])];
     });
     setAdvancedPattern(patternCopy);
-    
+
     setSubdivisionSounds({ ...settings.subdivisionSounds });
     setCustomSubdivisions([...settings.customSubdivisions]);
-    
+
     // Load speed percentage if it exists, otherwise keep current value
     if (settings.speedPercentage !== undefined) {
       setSpeedPercentage(settings.speedPercentage);
@@ -904,7 +937,7 @@ function App() {
     // Set the editing ID to indicate we're editing an existing setting
     setEditingSettingsId(settings.id);
     setSettingsName(settings.name);
-    
+
     // Start the metronome after loading settings
     setIsPlaying(true);
   };
@@ -945,7 +978,7 @@ function App() {
               </button>
             </div>
           </div>
-          
+
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-white mb-2">Rhythm Weaver</h1>
             <p className="text-blue-200">{tagline}</p>
@@ -1085,23 +1118,21 @@ function App() {
                   {Array.from({ length: beatsPerMeasure }).map((_, beatIndex) => (
                     <div key={`beat-${beatIndex}`} className="flex flex-col gap-1">
                       <div
-                        className={`w-8 h-8 rounded-full transition-colors ${
-                          beatIndex === currentBeat
-                            ? 'bg-blue-400'
-                            : 'bg-white/20'
-                        }`}
+                        className={`w-8 h-8 rounded-full transition-colors ${beatIndex === currentBeat
+                          ? 'bg-blue-400'
+                          : 'bg-white/20'
+                          }`}
                       />
                       {subdivision > 1 && (
                         <div className="flex gap-0.5">
                           {Array.from({ length: subdivision - 1 }).map((_, subIndex) => (
                             <div
                               key={`sub-${beatIndex}-${subIndex}`}
-                              className={`w-3 h-3 rounded-full transition-colors ${
-                                beatIndex === currentBeat &&
+                              className={`w-3 h-3 rounded-full transition-colors ${beatIndex === currentBeat &&
                                 subIndex + 1 === currentSubdivision
-                                  ? 'bg-blue-400/70'
-                                  : 'bg-white/10'
-                              }`}
+                                ? 'bg-blue-400/70'
+                                : 'bg-white/10'
+                                }`}
                             />
                           ))}
                         </div>
@@ -1172,7 +1203,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              
+
               <div className="mb-8 w-full">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-semibold text-white">Sound Pattern</h2>
@@ -1186,15 +1217,14 @@ function App() {
                             <button
                               key={i}
                               onClick={() => toggleBeat(sub, i)}
-                              className={`h-6 transition-colors ${
-                                advancedPattern[sub]?.[i]
-                                  ? sub === 0 
-                                    ? 'bg-blue-400 hover:bg-blue-500' 
-                                    : sub === 1
-                                      ? 'bg-amber-600 hover:bg-amber-700'
-                                      : 'bg-[#F44336] hover:bg-[#D32F2F]'
-                                  : 'bg-white/20 hover:bg-white/30'
-                              } ${sub === 0 && i % subdivision === 0 ? 'border-l-2 border-blue-400' : ''}`}
+                              className={`h-6 transition-colors ${advancedPattern[sub]?.[i]
+                                ? sub === 0
+                                  ? 'bg-blue-400 hover:bg-blue-500'
+                                  : sub === 1
+                                    ? 'bg-amber-600 hover:bg-amber-700'
+                                    : 'bg-[#F44336] hover:bg-[#D32F2F]'
+                                : 'bg-white/20 hover:bg-white/30'
+                                } ${sub === 0 && i % subdivision === 0 ? 'border-l-2 border-blue-400' : ''}`}
                               title={`${advancedPattern[sub]?.[i] ? `Sound ${sub} on` : 'No sound'} at square ${i + 1}`}
                             />
                           ))}
@@ -1210,7 +1240,7 @@ function App() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-white">Sound Settings</h2>
               </div>
-              
+
               {/* Global Volume Control */}
               <div className="p-4 rounded-xl bg-white/5 mb-4">
                 <label className="text-blue-200 text-sm mb-2 block">
@@ -1225,7 +1255,7 @@ function App() {
                   className="w-full"
                 />
               </div>
-              
+
               <div className="space-y-4">
                 <div className="p-4 rounded-xl bg-white/5">
                   <div className="flex items-center justify-between mb-2">
@@ -1318,7 +1348,7 @@ function App() {
                         </div>
                       </>
                     )}
-                    
+
                     <div>
                       <label className="text-blue-200 text-sm mb-1 block">
                         Waveform
@@ -1334,7 +1364,7 @@ function App() {
                         <option value="triangle">Triangle</option>
                       </select>
                     </div>
-                    
+
                     <div>
                       <label className="text-blue-200 text-sm mb-1 block">
                         Attack: {(subdivisionSounds[0]?.attack || 0.01).toFixed(3)}s
@@ -1352,7 +1382,7 @@ function App() {
                         Time for the sound to reach full volume
                       </div>
                     </div>
-                    
+
                     <div>
                       <label className="text-blue-200 text-sm mb-1 block">
                         Decay: {(subdivisionSounds[0]?.decay || 0.2).toFixed(3)}s
@@ -1382,11 +1412,10 @@ function App() {
                           onClick={() => {
                             playClick(sub);
                           }}
-                          className={`p-2 rounded-lg transition-colors text-white ${
-                            sub === 1 
-                              ? 'bg-amber-600 hover:bg-amber-700' 
-                              : 'bg-[#F44336] hover:bg-[#D32F2F]'
-                          }`}
+                          className={`p-2 rounded-lg transition-colors text-white ${sub === 1
+                            ? 'bg-amber-600 hover:bg-amber-700'
+                            : 'bg-[#F44336] hover:bg-[#D32F2F]'
+                            }`}
                         >
                           <GraphicEqIcon fontSize="small" />
                         </button>
@@ -1471,7 +1500,7 @@ function App() {
                             </div>
                           </>
                         )}
-                        
+
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
                             Waveform
@@ -1487,7 +1516,7 @@ function App() {
                             <option value="triangle">Triangle</option>
                           </select>
                         </div>
-                        
+
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
                             Attack: {(sound.attack || 0.01).toFixed(3)}s
@@ -1505,7 +1534,7 @@ function App() {
                             Time for the sound to reach full volume
                           </div>
                         </div>
-                        
+
                         <div>
                           <label className="text-blue-200 text-sm mb-1 block">
                             Decay: {(sound.decay || 0.2).toFixed(3)}s
@@ -1535,11 +1564,10 @@ function App() {
             <div className="relative">
               <button
                 onClick={() => setIsPlaying(!isPlaying)}
-                className={`w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2 transition-colors ${
-                  isPlaying
-                    ? 'bg-red-500 hover:bg-red-600'
-                    : 'bg-blue-500 hover:bg-blue-600'
-                }`}
+                className={`w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2 transition-colors ${isPlaying
+                  ? 'bg-red-500 hover:bg-red-600'
+                  : 'bg-blue-500 hover:bg-blue-600'
+                  }`}
               >
                 {isPlaying ? (
                   <>
@@ -1551,11 +1579,11 @@ function App() {
                   </>
                 )}
               </button>
-              
+
               <div className="absolute left-2 top-1/2 -translate-y-1/2 text-white/70 text-sm">
                 {countdownTime !== null ? formatTime(countdownTime) : formatTime(elapsedTime)}
               </div>
-              
+
               <div className="absolute right-2 top-1/2 -translate-y-1/2">
                 <div className="relative">
                   <button
@@ -1568,9 +1596,9 @@ function App() {
                   >
                     <TimerIcon fontSize="small" />
                   </button>
-                  
+
                   {showTimeout && (
-                    <div 
+                    <div
                       className="absolute bottom-full right-0 mb-2 bg-slate-800 rounded-lg shadow-xl p-2 min-w-[120px]"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -1581,9 +1609,8 @@ function App() {
                             setTimeoutMinutes(mins);
                             setShowTimeout(false);
                           }}
-                          className={`block w-full text-left px-3 py-1 rounded hover:bg-white/10 text-white ${
-                            timeoutMinutes === mins ? 'bg-white/20' : ''
-                          }`}
+                          className={`block w-full text-left px-3 py-1 rounded hover:bg-white/10 text-white ${timeoutMinutes === mins ? 'bg-white/20' : ''
+                            }`}
                         >
                           {mins} min
                         </button>
