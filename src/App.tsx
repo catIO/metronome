@@ -778,7 +778,6 @@ function App() {
     if (isPlaying) {
       if (timeoutMinutes) {
         // Countdown timer
-        setCountdownTime(timeoutMinutes * 60 * 1000);
         timerIntervalRef.current = setInterval(() => {
           setCountdownTime(prev => {
             if (prev && prev > 1000) {
@@ -805,7 +804,6 @@ function App() {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
-      setCountdownTime(null);
     }
 
     return () => {
@@ -813,7 +811,8 @@ function App() {
         clearInterval(timerIntervalRef.current);
       }
     };
-  }, [isPlaying, elapsedTime, timeoutMinutes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, timeoutMinutes]);
 
   // Manage wake lock based on playing state
   useEffect(() => {
@@ -1189,7 +1188,9 @@ function App() {
                     <RemoveIcon fontSize="small" />
                   </button>
                   <div className="text-center relative group">
-                    <div className="text-2xl font-bold text-white">{speedPercentage}%</div>
+                    <div className="text-2xl font-bold text-white">
+                      {speedPercentage}<span className="hidden sm:inline">%</span>
+                    </div>
                     <div className="text-blue-200 text-sm">Speed</div>
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 rounded-lg shadow-xl text-white text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                       {Math.round(bpm * (speedPercentage / 100))} BPM
@@ -1607,6 +1608,7 @@ function App() {
                           key={mins}
                           onClick={() => {
                             setTimeoutMinutes(mins);
+                            setCountdownTime(mins * 60 * 1000);
                             setShowTimeout(false);
                           }}
                           className={`block w-full text-left px-3 py-1 rounded hover:bg-white/10 text-white ${timeoutMinutes === mins ? 'bg-white/20' : ''
@@ -1619,6 +1621,7 @@ function App() {
                         <button
                           onClick={() => {
                             setTimeoutMinutes(null);
+                            setCountdownTime(null);
                             setShowTimeout(false);
                           }}
                           className="block w-full text-left px-3 py-1 rounded hover:bg-white/10 text-red-400"
