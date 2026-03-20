@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 // TypeScript declaration for Wake Lock API
 interface WakeLockSentinel {
@@ -127,6 +128,13 @@ const TAGLINES = [
   "Keep the beat alive"
 ];
 
+/**
+ * App master gain at UI 100% (Web Audio linear gain). Final loudness is still capped by the OS /
+ * browser output volume. Previously max was 4; raising this makes 100% in Sound Settings louder
+ * relative to the same OS volume. Per-click envelopes still apply on top (short peaks may clip).
+ */
+const MAX_MASTER_VOLUME = 8;
+
 type SubdivisionSounds = {
   [key in Subdivision]?: SoundSettings;
 };
@@ -183,7 +191,10 @@ function App() {
   });
   const [globalVolume, setGlobalVolume] = useState(() => {
     const saved = localStorage.getItem('globalVolume');
-    return saved ? parseFloat(saved) : 2.0; // Default to 50% volume (2.0 gain = 50% on slider)
+    if (saved !== null && !Number.isNaN(parseFloat(saved))) {
+      return Math.min(Math.max(0, parseFloat(saved)), MAX_MASTER_VOLUME);
+    }
+    return MAX_MASTER_VOLUME / 2; // Default 50% on slider
   });
   const [speedPercentage, setSpeedPercentage] = useState(() => {
     const saved = localStorage.getItem('speedPercentage');
@@ -609,7 +620,7 @@ function App() {
   // Add keyboard event listener for spacebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only toggle play/stop if not editing BPM and not in sound settings and not in save settings dialog
+      // Only toggle play/stop if not editing BPM and not in sound settings and not in presets dialog
       if (e.code === 'Space' && !isEditingBpm && !showSoundSettings && !showSaveDialog) {
         e.preventDefault(); // Prevent page scrolling
         setIsPlaying(prev => !prev);
@@ -962,7 +973,7 @@ function App() {
                   setEditingSettingsId(null);
                 }}
                 className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
-                title="Save"
+                title="Presets"
               >
                 <AddCircleIcon fontSize="small" />
               </button>
@@ -983,96 +994,125 @@ function App() {
             <p className="text-blue-200">{tagline}</p>
           </div>
 
-          {showSaveDialog && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-slate-800 p-6 rounded-xl shadow-xl max-w-md w-full">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-semibold text-white">
-                    {editingSettingsId ? 'Edit Settings' : 'Save Settings'}
-                  </h3>
-                  <button
-                    onClick={() => setShowSaveDialog(false)}
-                    className="p-2 rounded-lg hover:bg-white/10 transition-colors text-white"
-                  >
-                    <CloseIcon fontSize="small" />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <input
-                      type="text"
-                      value={settingsName}
-                      onChange={(e) => setSettingsName(e.target.value)}
-                      placeholder="Enter settings name"
-                      className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
-                    />
-                  </div>
-
-                  {savedSettings.length > 0 && (
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      <h4 className="text-white/70 text-sm">Saved Settings</h4>
-                      {savedSettings.map((settings) => (
-                        <div
-                          key={settings.id}
-                          className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-                        >
-                          <span className="text-white">{settings.name}</span>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => loadSettings(settings)}
-                              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white"
-                              title="Load settings"
-                            >
-                              <PlayArrowIcon fontSize="small" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingSettingsId(settings.id);
-                                setSettingsName(settings.name);
-                                setShowSaveDialog(true);
-                              }}
-                              className="p-2 rounded-lg bg-amber-500 hover:bg-amber-600 transition-colors text-white"
-                              title="Save current settings"
-                            >
-                              <UpdateIcon fontSize="small" />
-                            </button>
-                            <button
-                              onClick={() => deleteSettings(settings.id)}
-                              className="p-2 rounded-lg bg-red-500 hover:bg-red-600 transition-colors text-white"
-                              title="Delete settings"
-                            >
-                              <CloseIcon fontSize="small" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex justify-end gap-2">
+          {showSaveDialog &&
+            createPortal(
+              <div
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+                role="presentation"
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  setSettingsName('');
+                  setEditingSettingsId(null);
+                }}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="presets-dialog-title"
+                  className="bg-slate-800 p-6 rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <h3
+                      id="presets-dialog-title"
+                      className="text-xl font-semibold text-white"
+                    >
+                      {editingSettingsId ? 'Edit preset' : 'Presets'}
+                    </h3>
                     <button
+                      type="button"
                       onClick={() => {
                         setShowSaveDialog(false);
                         setSettingsName('');
                         setEditingSettingsId(null);
                       }}
-                      className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                      className="p-2 rounded-lg hover:bg-white/10 transition-colors text-white"
                     >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveCurrentSettings}
-                      disabled={!settingsName.trim()}
-                      className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white disabled:opacity-50"
-                    >
-                      Save
+                      <CloseIcon fontSize="small" />
                     </button>
                   </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <input
+                        type="text"
+                        value={settingsName}
+                        onChange={(e) => setSettingsName(e.target.value)}
+                        placeholder="Preset name"
+                        className="w-full bg-white/10 text-white rounded-lg p-2 border border-white/20"
+                      />
+                    </div>
+
+                    {savedSettings.length > 0 && (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        <h4 className="text-white/70 text-sm">Your presets</h4>
+                        {savedSettings.map((settings) => (
+                          <div
+                            key={settings.id}
+                            className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                          >
+                            <span className="text-white">{settings.name}</span>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => loadSettings(settings)}
+                                className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white"
+                                title="Load preset"
+                              >
+                                <PlayArrowIcon fontSize="small" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSettingsId(settings.id);
+                                  setSettingsName(settings.name);
+                                  setShowSaveDialog(true);
+                                }}
+                                className="p-2 rounded-lg bg-amber-500 hover:bg-amber-600 transition-colors text-white"
+                                title="Overwrite with current setup"
+                              >
+                                <UpdateIcon fontSize="small" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteSettings(settings.id)}
+                                className="p-2 rounded-lg bg-red-500 hover:bg-red-600 transition-colors text-white"
+                                title="Delete preset"
+                              >
+                                <CloseIcon fontSize="small" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSaveDialog(false);
+                          setSettingsName('');
+                          setEditingSettingsId(null);
+                        }}
+                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveCurrentSettings}
+                        disabled={!settingsName.trim()}
+                        className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white disabled:opacity-50"
+                      >
+                        Save preset
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              </div>,
+              document.body
+            )}
 
           {!showSoundSettings ? (
             <>
@@ -1245,14 +1285,16 @@ function App() {
               {/* Global Volume Control */}
               <div className="p-4 rounded-xl bg-white/5 mb-4">
                 <label className="text-blue-200 text-sm mb-2 block">
-                  Volume: {Math.round((globalVolume / 4.0) * 100)}%
+                  Volume: {Math.round((globalVolume / MAX_MASTER_VOLUME) * 100)}%
                 </label>
                 <input
                   type="range"
                   min="0"
                   max="100"
-                  value={(globalVolume / 4.0) * 100}
-                  onChange={(e) => setGlobalVolume((Number(e.target.value) / 100) * 4.0)}
+                  value={(globalVolume / MAX_MASTER_VOLUME) * 100}
+                  onChange={(e) =>
+                    setGlobalVolume((Number(e.target.value) / 100) * MAX_MASTER_VOLUME)
+                  }
                   className="w-full"
                 />
               </div>
