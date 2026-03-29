@@ -154,6 +154,7 @@ function App() {
   });
   const [currentBeat, setCurrentBeat] = useState(0);
   const [currentSubdivision, setCurrentSubdivision] = useState(0);
+  const [currentSoundSubdivision, setCurrentSoundSubdivision] = useState<Subdivision | null>(0);
   const [subdivision, setSubdivision] = useState<Subdivision>(() => {
     const savedSubdivision = localStorage.getItem('subdivision');
     return savedSubdivision ? parseInt(savedSubdivision) : 1;
@@ -338,16 +339,21 @@ function App() {
         setCurrentSubdivision(currentIndex % subdivision);
 
         // Then play sounds if selected - only the lowest selected row should play
+        let playedSubdivision: Subdivision | null = null;
         if (isSelected2) {
           // Play the second pattern sound (lowest row)
+          playedSubdivision = 2;
           playClick(2);
         } else if (isSelected) {
           // Play first division sound (middle row)
+          playedSubdivision = 1;
           playClick(1);
         } else if (isMainBeatSelected) {
           // Play main beat sound (top row)
+          playedSubdivision = 0;
           playClick(0);
         }
+        setCurrentSoundSubdivision(playedSubdivision);
 
         // Move to next square for the next tick
         currentIndex = (currentIndex + 1) % (beatsPerMeasure * subdivision);
@@ -364,6 +370,7 @@ function App() {
       }
       setCurrentBeat(0);
       setCurrentSubdivision(0);
+      setCurrentSoundSubdivision(0);
     }
 
     return () => {
@@ -382,6 +389,12 @@ function App() {
       const newValue = increase ? Math.min(prev + 1, 8) : Math.max(prev - 1, 1);
       return newValue;
     });
+  };
+
+  const getIndicatorColor = (soundSubdivision: Subdivision | null) => {
+    if (soundSubdivision === 0) return '#60a5fa'; // blue-400
+    if (soundSubdivision === 1) return '#d97706'; // amber-600
+    return '#F44336'; // red
   };
 
   const toggleBeat = (subdivisionValue: Subdivision, index: number) => {
@@ -1158,9 +1171,10 @@ function App() {
                     <div key={`beat-${beatIndex}`} className="flex flex-col gap-1">
                       <div
                         className={`w-8 h-8 rounded-full transition-colors ${beatIndex === currentBeat
-                          ? 'bg-blue-400'
+                          ? ''
                           : 'bg-white/20'
                           }`}
+                        style={beatIndex === currentBeat ? { backgroundColor: getIndicatorColor(currentSoundSubdivision) } : undefined}
                       />
                       {subdivision > 1 && (
                         <div className="flex gap-0.5">
@@ -1169,9 +1183,12 @@ function App() {
                               key={`sub-${beatIndex}-${subIndex}`}
                               className={`w-3 h-3 rounded-full transition-colors ${beatIndex === currentBeat &&
                                 subIndex + 1 === currentSubdivision
-                                ? 'bg-blue-400/70'
+                                ? ''
                                 : 'bg-white/10'
                                 }`}
+                              style={beatIndex === currentBeat && subIndex + 1 === currentSubdivision
+                                ? { backgroundColor: getIndicatorColor(currentSoundSubdivision), opacity: 0.7 }
+                                : undefined}
                             />
                           ))}
                         </div>
