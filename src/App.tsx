@@ -245,6 +245,7 @@ function App() {
   // Keep track of previous dimensions to correctly map beat grid mathematically when resized
   const prevBeatsRef = useRef(beatsPerMeasure);
   const prevSubdivisionRef = useRef(subdivision);
+  const isHydratingPresetRef = useRef(false);
 
   useEffect(() => {
     audioContext.current = new AudioContext();
@@ -529,6 +530,14 @@ function App() {
   }, [subdivisionSounds]);
 
   useEffect(() => {
+    // When hydrating a saved preset, we already have the exact boolean grid for the
+    // target dimensions; don't remap/scale it here or it will drift.
+    if (isHydratingPresetRef.current) {
+      prevBeatsRef.current = beatsPerMeasure;
+      prevSubdivisionRef.current = subdivision;
+      return;
+    }
+
     // Update pattern when beatsPerMeasure or subdivision changes
     setAdvancedPattern((prev) => {
       const newPattern: BeatPattern = {};
@@ -936,6 +945,9 @@ function App() {
     // Reset all UI state
     resetUIState();
 
+    // Prevent the pattern-resize effect from remapping the loaded grid.
+    isHydratingPresetRef.current = true;
+
     // Load the saved settings
     setBpm(settings.bpm);
     setBeatsPerMeasure(settings.beatsPerMeasure);
@@ -963,6 +975,11 @@ function App() {
 
     // Start the metronome after loading settings
     setIsPlaying(true);
+
+    // Let the resize effect run again on subsequent user changes.
+    window.setTimeout(() => {
+      isHydratingPresetRef.current = false;
+    }, 0);
   };
 
   const deleteSettings = (id: string) => {
