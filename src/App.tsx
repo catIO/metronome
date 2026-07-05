@@ -19,6 +19,11 @@ import AddCircleIcon from '@mui/icons-material/AddCircle';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import TimerIcon from '@mui/icons-material/Timer';
 import UpdateIcon from '@mui/icons-material/Update';
+import FileUploadIcon from '@mui/icons-material/FileUpload';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import BackupIcon from '@mui/icons-material/Backup';
+
+
 
 type Subdivision = number;
 
@@ -231,6 +236,7 @@ function App() {
     return TAGLINES[randomIndex];
   });
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showBackupOptions, setShowBackupOptions] = useState(false);
   const [settingsName, setSettingsName] = useState('');
   const [editingSettingsId, setEditingSettingsId] = useState<string | null>(null);
   const [savedSettings, setSavedSettings] = useState<SavedSettings[]>(() => {
@@ -990,6 +996,120 @@ function App() {
     });
   };
 
+  const exportData = () => {
+    try {
+      const dataToExport = {
+        version: '1.0',
+        bpm,
+        beatsPerMeasure,
+        subdivision,
+        customSubdivisions,
+        soundPattern: advancedPattern,
+        globalVolume,
+        speedPercentage,
+        soundSettings: subdivisionSounds,
+        savedSettings,
+      };
+      
+      const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `rhythm_weaver_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Failed to export data');
+    }
+  };
+
+  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const data = JSON.parse(content);
+
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid file format: Not a JSON object');
+        }
+
+        const confirmImport = window.confirm(
+          'Are you sure you want to import this data? This will overwrite your current configuration and presets.'
+        );
+        if (!confirmImport) return;
+
+        // Stop playback during import to prevent audio glitches
+        setIsPlaying(false);
+
+        let loadedBpm = data.bpm;
+        let loadedBeats = data.beatsPerMeasure;
+        let loadedSubdivision = data.subdivision;
+        let loadedCustomSubdivisions = data.customSubdivisions;
+        let loadedPattern = data.soundPattern;
+        let loadedGlobalVolume = data.globalVolume;
+        let loadedSpeed = data.speedPercentage;
+        let loadedSoundSettings = data.soundSettings;
+        let loadedPresets = data.savedSettings || data.presets;
+
+        // Validation & State updates
+        if (loadedBpm && typeof loadedBpm === 'number') {
+          setBpm(loadedBpm);
+          localStorage.setItem('bpm', loadedBpm.toString());
+        }
+        if (loadedBeats && typeof loadedBeats === 'number') {
+          setBeatsPerMeasure(loadedBeats);
+          localStorage.setItem('beatsPerMeasure', loadedBeats.toString());
+        }
+        if (loadedSubdivision && typeof loadedSubdivision === 'number') {
+          setSubdivision(loadedSubdivision);
+          localStorage.setItem('subdivision', loadedSubdivision.toString());
+        }
+        if (loadedCustomSubdivisions && Array.isArray(loadedCustomSubdivisions)) {
+          setCustomSubdivisions(loadedCustomSubdivisions);
+          localStorage.setItem('customSubdivisions', JSON.stringify(loadedCustomSubdivisions));
+        }
+        if (loadedPattern && typeof loadedPattern === 'object') {
+          setAdvancedPattern(loadedPattern);
+          localStorage.setItem('soundPattern', JSON.stringify(loadedPattern));
+        }
+        if (loadedGlobalVolume && typeof loadedGlobalVolume === 'number') {
+          setGlobalVolume(loadedGlobalVolume);
+          localStorage.setItem('globalVolume', loadedGlobalVolume.toString());
+        }
+        if (loadedSpeed && typeof loadedSpeed === 'number') {
+          setSpeedPercentage(loadedSpeed);
+          localStorage.setItem('speedPercentage', loadedSpeed.toString());
+        }
+        if (loadedSoundSettings && typeof loadedSoundSettings === 'object') {
+          setSubdivisionSounds(loadedSoundSettings);
+          localStorage.setItem('soundSettings', JSON.stringify(loadedSoundSettings));
+        }
+        if (loadedPresets && Array.isArray(loadedPresets)) {
+          setSavedSettings(loadedPresets);
+          localStorage.setItem('savedSettings', JSON.stringify(loadedPresets));
+        }
+
+        alert('Data imported successfully!');
+        // Close presets dialog
+        setShowSaveDialog(false);
+      } catch (error) {
+        console.error('Error importing data:', error);
+        alert(`Failed to import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    };
+    reader.readAsText(file);
+    // Reset file input value so same file can be imported again
+    event.target.value = '';
+  };
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 flex items-center justify-center p-0 sm:p-4">
       <div className="relative w-full max-w-4xl mx-auto">
@@ -1117,26 +1237,67 @@ function App() {
                       </div>
                     )}
 
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowSaveDialog(false);
-                          setSettingsName('');
-                          setEditingSettingsId(null);
-                        }}
-                        className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveCurrentSettings}
-                        disabled={!settingsName.trim()}
-                        className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white disabled:opacity-50"
-                      >
-                        Save preset
-                      </button>
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowBackupOptions(!showBackupOptions)}
+                          className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white flex items-center justify-center"
+                          title="Backup & Restore Options"
+                        >
+                          <BackupIcon fontSize="small" />
+                        </button>
+                        
+                        {showBackupOptions && (
+                          <div className="absolute bottom-full left-0 mb-2 bg-slate-700 rounded-lg shadow-xl p-2 min-w-[160px] z-50 flex flex-col gap-1 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                exportData();
+                                setShowBackupOptions(false);
+                              }}
+                              className="w-full py-1.5 px-3 rounded hover:bg-white/10 text-white text-sm font-medium flex items-center gap-2 text-left"
+                            >
+                              <FileDownloadIcon fontSize="small" /> Export Backup
+                            </button>
+                            <label className="w-full py-1.5 px-3 rounded hover:bg-white/10 text-white text-sm font-medium flex items-center gap-2 text-left cursor-pointer">
+                              <FileUploadIcon fontSize="small" /> Import Backup
+                              <input
+                                type="file"
+                                accept=".json"
+                                onChange={(e) => {
+                                  importData(e);
+                                  setShowBackupOptions(false);
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSaveDialog(false);
+                            setSettingsName('');
+                            setEditingSettingsId(null);
+                            setShowBackupOptions(false);
+                          }}
+                          className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveCurrentSettings}
+                          disabled={!settingsName.trim()}
+                          className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 transition-colors text-white disabled:opacity-50"
+                        >
+                          Save preset
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
