@@ -58,7 +58,7 @@ type SavedSettings = {
 const SOUND_PRESETS = {
   'Piano': {
     frequency: 440,
-    gain: 1.5,
+    gain: 0.8,
     filterType: 'lowpass',
     filterFrequency: 1500,
     filterQ: 0.5,
@@ -69,7 +69,7 @@ const SOUND_PRESETS = {
   },
   'Wood Block': {
     frequency: 180,
-    gain: 1.5,
+    gain: 0.8,
     filterType: 'bandpass',
     filterFrequency: 600,
     filterQ: 2.5,
@@ -80,7 +80,7 @@ const SOUND_PRESETS = {
   },
   'Click': {
     frequency: 800,
-    gain: 1.5,
+    gain: 0.8,
     filterType: 'lowpass',
     filterFrequency: 1200,
     filterQ: 2,
@@ -91,7 +91,7 @@ const SOUND_PRESETS = {
   },
   'Woodpecker': {
     frequency: 300,
-    gain: 1.5,
+    gain: 0.8,
     filterType: 'bandpass',
     filterFrequency: 800,
     filterQ: 3,
@@ -102,7 +102,7 @@ const SOUND_PRESETS = {
   },
   'Bird': {
     frequency: 2000,
-    gain: 1.5,
+    gain: 0.8,
     filterType: 'bandpass',
     filterFrequency: 3000,
     filterQ: 6,
@@ -133,12 +133,19 @@ const TAGLINES = [
   "Keep the beat alive"
 ];
 
-/**
- * App master gain at UI 100% (Web Audio linear gain). Final loudness is still capped by the OS /
- * browser output volume. Previously max was 4; raising this makes 100% in Sound Settings louder
- * relative to the same OS volume. Per-click envelopes still apply on top (short peaks may clip).
- */
-const MAX_MASTER_VOLUME = 8;
+// App master gain at UI 100%. Capped at 1.0 so the app never amplifies beyond the system
+// volume ceiling — per-click gains (≤ 0.8) multiply against this, keeping the chain below 1.0.
+const MAX_MASTER_VOLUME = 1;
+
+// Default sound profile: three clearly distinct layered clicks
+const DEFAULT_SOUND_SETTINGS: { [key: number]: SoundSettings } = {
+  // Row 0 (blue) – accent/downbeat: sharp, high-pitched click
+  0: { frequency: 1000, gain: 0.8, filterType: 'none', filterFrequency: 1000, filterQ: 1, attack: 0.001, decay: 0.05, waveform: 'square', soundType: 'Click' },
+  // Row 1 (amber) – mid subdivision: warm wood-block feel
+  1: { frequency: 500, gain: 0.7, filterType: 'bandpass', filterFrequency: 800, filterQ: 2, attack: 0.003, decay: 0.08, waveform: 'triangle', soundType: 'Woodpecker' },
+  // Row 2 (red) – soft subdivision: low, subtle tick
+  2: { frequency: 280, gain: 0.55, filterType: 'bandpass', filterFrequency: 500, filterQ: 2.5, attack: 0.003, decay: 0.06, waveform: 'triangle', soundType: 'Wood Block' },
+};
 
 type SubdivisionSounds = {
   [key in Subdivision]?: SoundSettings;
@@ -160,6 +167,7 @@ function App() {
   const [currentBeat, setCurrentBeat] = useState(0);
   const [currentSubdivision, setCurrentSubdivision] = useState(0);
   const [currentSoundSubdivision, setCurrentSoundSubdivision] = useState<Subdivision | null>(0);
+  const [currentBeatColor, setCurrentBeatColor] = useState<Subdivision | null>(0);
   const [subdivision, setSubdivision] = useState<Subdivision>(() => {
     const savedSubdivision = localStorage.getItem('subdivision');
     return savedSubdivision ? parseInt(savedSubdivision) : 1;
@@ -198,9 +206,12 @@ function App() {
   const [globalVolume, setGlobalVolume] = useState(() => {
     const saved = localStorage.getItem('globalVolume');
     if (saved !== null && !Number.isNaN(parseFloat(saved))) {
-      return Math.min(Math.max(0, parseFloat(saved)), MAX_MASTER_VOLUME);
+      const raw = parseFloat(saved);
+      // Migrate values saved under the old 0–8 scale (MAX_MASTER_VOLUME was 8)
+      const normalized = raw > 1 ? raw / 8 : raw;
+      return Math.min(Math.max(0, normalized), MAX_MASTER_VOLUME);
     }
-    return MAX_MASTER_VOLUME / 2; // Default 50% on slider
+    return 0.8; // Default 80% — loud enough out of the box, below clipping ceiling
   });
   const [speedPercentage, setSpeedPercentage] = useState(() => {
     const saved = localStorage.getItem('speedPercentage');
@@ -218,16 +229,14 @@ function App() {
       }
     }
 
-    // Default sound settings if nothing is saved
-    return {
-      0: { frequency: 1000, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
-      1: { frequency: 800, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
-      2: { frequency: 600, gain: 1.0, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
-    };
+    // Default sound settings if nothing is saved — use the canonical defaults
+    return { ...DEFAULT_SOUND_SETTINGS };
   });
   const audioContext = useRef<AudioContext | null>(null);
   const masterGainNode = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const visualQueueRef = useRef<Array<{ time: number; beat: number; sub: number; soundSub: Subdivision | null; isBeatStart: boolean }>>([]);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const [showTimeout, setShowTimeout] = useState(false);
   const [timeoutMinutes, setTimeoutMinutes] = useState<number | null>(null);
@@ -240,13 +249,18 @@ function App() {
   const [settingsName, setSettingsName] = useState('');
   const [editingSettingsId, setEditingSettingsId] = useState<string | null>(null);
   const [savedSettings, setSavedSettings] = useState<SavedSettings[]>(() => {
-    const saved = localStorage.getItem('savedSettings');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('savedSettings');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to parse saved settings:', e);
+      return [];
+    }
   });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [countdownTime, setCountdownTime] = useState<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
-  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep track of previous dimensions to correctly map beat grid mathematically when resized
   const prevBeatsRef = useRef(beatsPerMeasure);
@@ -269,14 +283,11 @@ function App() {
     localStorage.setItem('bpm', bpm.toString());
   }, [bpm]);
 
-  const playClick = useCallback((subdivisionValue: Subdivision) => {
-    const currentSettings = subdivisionSounds[subdivisionValue];
+  const playClick = useCallback((subdivisionValue: Subdivision, startTime?: number, settingsOverride?: SoundSettings) => {
+    const ctx = audioContext.current;
+    if (!ctx) return;
 
-    if (!audioContext.current) {
-      return;
-    }
-
-    const soundSettings = currentSettings || {
+    const soundSettings = settingsOverride || subdivisionSounds[subdivisionValue] || {
       frequency: 440,
       gain: 0.3,
       filterType: 'none',
@@ -284,108 +295,119 @@ function App() {
       filterQ: 1,
       attack: 0.01,
       decay: 0.2,
-      waveform: 'sine'
+      waveform: 'sine' as OscillatorType,
     };
 
-    const oscillator = audioContext.current.createOscillator();
-    const gainNode = audioContext.current.createGain();
-    const filter = audioContext.current.createBiquadFilter();
+    const time = startTime ?? ctx.currentTime;
+    const attack = soundSettings.attack || 0.01;
+    const decay = soundSettings.decay || 0.2;
 
-    // Set oscillator type
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
     oscillator.type = soundSettings.waveform || 'sine';
     oscillator.frequency.value = soundSettings.frequency;
 
-    // Set up gain envelope
-    gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
-    gainNode.gain.linearRampToValueAtTime(
-      soundSettings.gain,
-      audioContext.current.currentTime + (soundSettings.attack || 0.01)
-    );
-    gainNode.gain.linearRampToValueAtTime(
-      0,
-      audioContext.current.currentTime + (soundSettings.attack || 0.01) + (soundSettings.decay || 0.2)
-    );
+    gainNode.gain.setValueAtTime(0, time);
+    gainNode.gain.linearRampToValueAtTime(soundSettings.gain, time + attack);
+    gainNode.gain.linearRampToValueAtTime(0, time + attack + decay);
 
-    // Apply filter settings
     if (soundSettings.filterType && soundSettings.filterType !== 'none') {
+      const filter = ctx.createBiquadFilter();
       filter.type = soundSettings.filterType as BiquadFilterType;
       filter.frequency.value = soundSettings.filterFrequency || 1000;
       filter.Q.value = soundSettings.filterQ || 1;
+      oscillator.connect(filter);
+      filter.connect(gainNode);
+      oscillator.onended = () => { oscillator.disconnect(); filter.disconnect(); gainNode.disconnect(); };
+    } else {
+      oscillator.connect(gainNode);
+      oscillator.onended = () => { oscillator.disconnect(); gainNode.disconnect(); };
     }
 
-    oscillator.connect(filter);
-    filter.connect(gainNode);
     gainNode.connect(masterGainNode.current!);
-
-    oscillator.start();
-    oscillator.stop(audioContext.current.currentTime + (soundSettings.attack || 0.01) + (soundSettings.decay || 0.2));
+    oscillator.start(time);
+    oscillator.stop(time + attack + decay);
   }, [subdivisionSounds]);
 
   useEffect(() => {
     if (isPlaying) {
-      // Reset beat and subdivision counters when starting
       setCurrentBeat(0);
       setCurrentSubdivision(0);
 
-      const intervalTime = (60 / bpm / subdivision) * 1000 / (speedPercentage / 100);
+      const ctx = audioContext.current!;
+      const SCHEDULE_AHEAD = 0.1;  // seconds to look ahead for audio scheduling
+      const SCHEDULER_INTERVAL = 25; // ms between scheduler runs
+
+      const intervalSeconds = (60 / bpm / subdivision) / (speedPercentage / 100);
+      let nextNoteTime = ctx.currentTime + 0.05;
       let currentIndex = 0;
 
-      const tick = () => {
-        // Get the pattern array
-        const pattern = advancedPattern[1] || [];
-        const pattern2 = advancedPattern[2] || [];
-        const mainBeatPattern = advancedPattern[0] || [];
+      // Rows sorted descending: highest key wins (deepest subdivision row has priority)
+      const sortedRows = [0, ...customSubdivisions].sort((a, b) => b - a);
+      visualQueueRef.current = [];
 
-        // Check if the current square is selected
-        const isSelected = pattern[currentIndex];
-        const isSelected2 = pattern2[currentIndex];
-        const isMainBeatSelected = mainBeatPattern[currentIndex];
+      const scheduleNote = (index: number, time: number) => {
+        const beat = Math.floor(index / subdivision);
+        const sub = index % subdivision;
 
-        // Update visual indicators first
-        setCurrentBeat(Math.floor(currentIndex / subdivision));
-        setCurrentSubdivision(currentIndex % subdivision);
-
-        // Then play sounds if selected - only the lowest selected row should play
         let playedSubdivision: Subdivision | null = null;
-        if (isSelected2) {
-          // Play the second pattern sound (lowest row)
-          playedSubdivision = 2;
-          playClick(2);
-        } else if (isSelected) {
-          // Play first division sound (middle row)
-          playedSubdivision = 1;
-          playClick(1);
-        } else if (isMainBeatSelected) {
-          // Play main beat sound (top row)
-          playedSubdivision = 0;
-          playClick(0);
+        for (const row of sortedRows) {
+          if ((advancedPattern[row] || [])[index]) {
+            playedSubdivision = row;
+            break;
+          }
         }
-        setCurrentSoundSubdivision(playedSubdivision);
 
-        // Move to next square for the next tick
-        currentIndex = (currentIndex + 1) % (beatsPerMeasure * subdivision);
+        if (playedSubdivision !== null) {
+          playClick(playedSubdivision, time);
+        }
+
+        visualQueueRef.current.push({ time, beat, sub, soundSub: playedSubdivision, isBeatStart: sub === 0 });
       };
 
-      // Start immediately
-      tick();
+      const scheduler = () => {
+        while (nextNoteTime < ctx.currentTime + SCHEDULE_AHEAD) {
+          scheduleNote(currentIndex, nextNoteTime);
+          nextNoteTime += intervalSeconds;
+          currentIndex = (currentIndex + 1) % (beatsPerMeasure * subdivision);
+        }
+        timerRef.current = window.setTimeout(scheduler, SCHEDULER_INTERVAL);
+      };
 
-      // Set up the interval for subsequent ticks
-      timerRef.current = window.setInterval(tick, intervalTime);
+      const drawVisuals = () => {
+        const now = ctx.currentTime;
+        while (visualQueueRef.current.length > 0 && visualQueueRef.current[0].time <= now) {
+          const event = visualQueueRef.current.shift()!;
+          setCurrentBeat(event.beat);
+          setCurrentSubdivision(event.sub);
+          setCurrentSoundSubdivision(event.soundSub);
+          if (event.isBeatStart) {
+            setCurrentBeatColor(event.soundSub);
+          }
+        }
+        rafRef.current = requestAnimationFrame(drawVisuals);
+      };
+
+      scheduler();
+      rafRef.current = requestAnimationFrame(drawVisuals);
+
     } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      visualQueueRef.current = [];
       setCurrentBeat(0);
       setCurrentSubdivision(0);
       setCurrentSoundSubdivision(0);
+      setCurrentBeatColor(0);
     }
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      visualQueueRef.current = [];
     };
-  }, [isPlaying, bpm, beatsPerMeasure, subdivision, advancedPattern, subdivisionSounds, speedPercentage]);
+  }, [isPlaying, bpm, beatsPerMeasure, subdivision, advancedPattern, subdivisionSounds, speedPercentage, customSubdivisions, playClick]);
 
   const adjustTempo = (amount: number) => {
     setBpm((prev) => Math.min(Math.max(prev + amount, 40), 220));
@@ -401,7 +423,8 @@ function App() {
   const getIndicatorColor = (soundSubdivision: Subdivision | null) => {
     if (soundSubdivision === 0) return '#60a5fa'; // blue-400
     if (soundSubdivision === 1) return '#d97706'; // amber-600
-    return '#F44336'; // red
+    if (soundSubdivision === 2) return '#F44336'; // red
+    return 'rgba(255,255,255,0.4)'; // neutral – no sound on this tick
   };
 
   const toggleBeat = (subdivisionValue: Subdivision, index: number) => {
@@ -412,128 +435,57 @@ function App() {
           i === index ? !enabled : enabled
         ),
       };
-      // Play sound if the beat is being turned on
       if (newPattern[subdivisionValue]?.[index]) {
         playClick(subdivisionValue);
       }
-      // Log the state of all squares in the row with sound information
-      console.log(`Row ${subdivisionValue} state:`, newPattern[subdivisionValue]?.map(enabled =>
-        enabled ? `on:sound ${subdivisionValue}` : 'off:no sound'
-      ));
       return newPattern;
     });
   };
 
 
+  const resetSoundSettings = useCallback(() => {
+    setSubdivisionSounds((prev) => {
+      const next = { ...prev };
+      [0, ...customSubdivisions].forEach((sub) => {
+        const defaults = DEFAULT_SOUND_SETTINGS[sub] ?? DEFAULT_SOUND_SETTINGS[2];
+        next[sub] = { ...defaults };
+      });
+      localStorage.setItem('soundSettings', JSON.stringify(next));
+      return next;
+    });
+  }, [customSubdivisions]);
+
+  const resetPattern = useCallback(() => {
+    const totalSquares = beatsPerMeasure * subdivision;
+    const next: BeatPattern = {};
+    [0, ...customSubdivisions].forEach((sub) => {
+      next[sub] = Array(totalSquares).fill(sub === 0);
+    });
+    setAdvancedPattern(next);
+    localStorage.setItem('soundPattern', JSON.stringify(next));
+  }, [beatsPerMeasure, subdivision, customSubdivisions]);
+
   const updateSoundSettings = useCallback((subdivisionValue: Subdivision, type: keyof SoundSettings, value: any) => {
     setSubdivisionSounds((prev) => {
-      const newSettings = {
-        ...prev,
-        [subdivisionValue]: {
-          ...prev[subdivisionValue],
-          [type]: value,
-        } as SoundSettings,
-      };
-
-      // Play the sound with the updated settings
-      if (audioContext.current) {
-        const sound = newSettings[subdivisionValue];
-        if (sound) {
-          const oscillator = audioContext.current.createOscillator();
-          const gainNode = audioContext.current.createGain();
-          const filter = audioContext.current.createBiquadFilter();
-
-          oscillator.type = (sound.waveform || 'sine') as OscillatorType;
-          oscillator.frequency.value = sound.frequency;
-
-          gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
-          gainNode.gain.linearRampToValueAtTime(
-            sound.gain, // Use the actual gain value
-            audioContext.current.currentTime + (sound.attack || 0.01)
-          );
-          gainNode.gain.linearRampToValueAtTime(
-            0,
-            audioContext.current.currentTime + (sound.attack || 0.01) + (sound.decay || 0.2)
-          );
-
-          if (sound.filterType && sound.filterType !== 'none') {
-            filter.type = sound.filterType as BiquadFilterType;
-            filter.frequency.value = sound.filterFrequency || 1000;
-            filter.Q.value = sound.filterQ || 1;
-          }
-
-          oscillator.connect(filter);
-          filter.connect(gainNode);
-          gainNode.connect(masterGainNode.current!);
-
-          oscillator.start();
-          oscillator.stop(audioContext.current.currentTime + (sound.attack || 0.01) + (sound.decay || 0.2));
-        }
-      }
-
+      const updatedSound = { ...prev[subdivisionValue], [type]: value } as SoundSettings;
+      const newSettings = { ...prev, [subdivisionValue]: updatedSound };
+      playClick(subdivisionValue, undefined, updatedSound);
       return newSettings;
     });
-  }, [subdivisionSounds]);
+  }, [playClick]);
 
   const handleSoundTypeChange = useCallback((subdivisionValue: Subdivision, soundType: string) => {
     const preset = SOUND_PRESETS[soundType as keyof typeof SOUND_PRESETS];
-    if (preset) {
-      // Get the current sound settings to preserve the volume
-      const currentSound = subdivisionSounds[subdivisionValue];
-      const currentGain = currentSound?.gain || 0.3;
+    if (!preset) return;
 
-      const newSettings = {
-        ...preset,
-        gain: currentGain, // Keep the current volume setting
-        soundType
-      } as SoundSettings;
+    const currentGain = subdivisionSounds[subdivisionValue]?.gain ?? 0.3;
+    const newSettings = { ...preset, gain: currentGain, soundType } as SoundSettings;
 
-      setSubdivisionSounds((prev) => ({
-        ...prev,
-        [subdivisionValue]: newSettings
-      }));
+    setSubdivisionSounds((prev) => ({ ...prev, [subdivisionValue]: newSettings }));
+    playClick(subdivisionValue, undefined, newSettings);
 
-      // Play the sound using the preset settings but with the preserved volume
-      if (audioContext.current) {
-        const oscillator = audioContext.current.createOscillator();
-        const gainNode = audioContext.current.createGain();
-        const filter = audioContext.current.createBiquadFilter();
-
-        oscillator.type = (preset.waveform || 'sine') as OscillatorType;
-        oscillator.frequency.value = preset.frequency;
-
-        gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
-        gainNode.gain.linearRampToValueAtTime(
-          currentGain, // Use the preserved volume
-          audioContext.current.currentTime + (preset.attack || 0.01)
-        );
-        gainNode.gain.linearRampToValueAtTime(
-          0,
-          audioContext.current.currentTime + (preset.attack || 0.01) + (preset.decay || 0.2)
-        );
-
-        if (preset.filterType && preset.filterType !== 'none') {
-          filter.type = preset.filterType as BiquadFilterType;
-          filter.frequency.value = preset.filterFrequency || 1000;
-          filter.Q.value = preset.filterQ || 1;
-        }
-
-        oscillator.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(masterGainNode.current!);
-
-        oscillator.start();
-        oscillator.stop(audioContext.current.currentTime + (preset.attack || 0.01) + (preset.decay || 0.2));
-      }
-
-      // Save to localStorage
-      const updatedSounds = {
-        ...subdivisionSounds,
-        [subdivisionValue]: newSettings
-      };
-      localStorage.setItem('soundSettings', JSON.stringify(updatedSounds));
-    }
-  }, [subdivisionSounds]);
+    localStorage.setItem('soundSettings', JSON.stringify({ ...subdivisionSounds, [subdivisionValue]: newSettings }));
+  }, [subdivisionSounds, playClick]);
 
   useEffect(() => {
     // When hydrating a saved preset, we already have the exact boolean grid for the
@@ -593,7 +545,6 @@ function App() {
   }, [beatsPerMeasure, subdivision, customSubdivisions]);
 
   const handleBpmClick = () => {
-    console.log('Starting BPM edit, current BPM:', bpm);
     setIsEditingBpm(true);
     setTempBpm(bpm.toString());
     setTimeout(() => {
@@ -604,8 +555,6 @@ function App() {
 
   const handleBpmChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    console.log('BPM input changed:', value);
-    // Allow any number input
     if (value === '' || !isNaN(parseInt(value))) {
       setTempBpm(value);
     }
@@ -613,13 +562,11 @@ function App() {
 
   const handleBpmBlur = () => {
     const newBpm = parseInt(tempBpm);
-    console.log('BPM blur event:', { newBpm, tempBpm, currentBpm: bpm });
     if (!isNaN(newBpm)) {
-      console.log('Setting new BPM:', newBpm);
-      setBpm(newBpm);
-      setTempBpm(newBpm.toString());
+      const clamped = Math.min(Math.max(newBpm, 40), 220);
+      setBpm(clamped);
+      setTempBpm(clamped.toString());
     } else {
-      console.log('Invalid BPM, reverting to:', bpm);
       setTempBpm(bpm.toString());
     }
     setIsEditingBpm(false);
@@ -628,18 +575,15 @@ function App() {
   const handleBpmKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       const newBpm = parseInt(tempBpm);
-      console.log('BPM Enter key:', { newBpm, tempBpm, currentBpm: bpm });
       if (!isNaN(newBpm)) {
-        console.log('Setting new BPM:', newBpm);
-        setBpm(newBpm);
-        setTempBpm(newBpm.toString());
+        const clamped = Math.min(Math.max(newBpm, 40), 220);
+        setBpm(clamped);
+        setTempBpm(clamped.toString());
       } else {
-        console.log('Invalid BPM, reverting to:', bpm);
         setTempBpm(bpm.toString());
       }
       setIsEditingBpm(false);
     } else if (e.key === 'Escape') {
-      console.log('BPM Escape key, reverting to:', bpm);
       setTempBpm(bpm.toString());
       setIsEditingBpm(false);
     }
@@ -725,11 +669,7 @@ function App() {
       2: Array(beatsPerMeasure * subdivision).fill(false), // Second division row
     });
 
-    setSubdivisionSounds({
-      0: { frequency: 1000, gain: 0.5, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' }, // Main beat sound
-      1: { frequency: 800, gain: 0.4, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // First division row sound
-      2: { frequency: 600, gain: 0.3, filterType: 'none', filterFrequency: 1000, filterQ: 1, soundType: 'Click' },  // Second division row sound
-    });
+    setSubdivisionSounds({ ...DEFAULT_SOUND_SETTINGS });
 
     setCustomSubdivisions([1, 2]);
     setBpm(120);
@@ -1010,7 +950,7 @@ function App() {
         soundSettings: subdivisionSounds,
         savedSettings,
       };
-      
+
       const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1247,7 +1187,7 @@ function App() {
                         >
                           <BackupIcon fontSize="small" />
                         </button>
-                        
+
                         {showBackupOptions && (
                           <div className="absolute bottom-full left-0 mb-2 bg-slate-700 rounded-lg shadow-xl p-2 min-w-[160px] z-50 flex flex-col gap-1 border border-white/10">
                             <button
@@ -1307,8 +1247,8 @@ function App() {
 
           {!showSoundSettings ? (
             <>
-              <div className="flex flex-col items-center mb-8">
-                <div className="flex items-center gap-4 mb-6">
+              <div className="flex flex-col items-center mb-4">
+                <div className="flex items-center gap-4 mb-2">
                   <button
                     onClick={() => adjustTempo(-1)}
                     className="custom-button rounded-full"
@@ -1343,23 +1283,23 @@ function App() {
                 <div className="text-blue-200">BPM</div>
               </div>
 
-              <div className="flex flex-col items-center gap-4 mb-8">
-                <div className="flex gap-2">
+              <div className="flex flex-col items-center gap-4 mb-2 pb-6">
+                <div className="flex gap-4">
                   {Array.from({ length: beatsPerMeasure }).map((_, beatIndex) => (
-                    <div key={`beat-${beatIndex}`} className="flex flex-col gap-1">
+                    <div key={`beat-${beatIndex}`} className="flex flex-col items-center gap-1.5">
                       <div
-                        className={`w-8 h-8 rounded-full transition-colors ${beatIndex === currentBeat
+                        className={`w-10 h-10 rounded-full transition-colors ${beatIndex === currentBeat
                           ? ''
                           : 'bg-white/20'
                           }`}
-                        style={beatIndex === currentBeat ? { backgroundColor: getIndicatorColor(currentSoundSubdivision) } : undefined}
+                        style={beatIndex === currentBeat ? { backgroundColor: getIndicatorColor(currentBeatColor) } : undefined}
                       />
                       {subdivision > 1 && (
-                        <div className="flex gap-0.5">
+                        <div className="flex gap-1.5 justify-center">
                           {Array.from({ length: subdivision - 1 }).map((_, subIndex) => (
                             <div
                               key={`sub-${beatIndex}-${subIndex}`}
-                              className={`w-3 h-3 rounded-full transition-colors ${beatIndex === currentBeat &&
+                              className={`w-4 h-4 rounded-full transition-colors ${beatIndex === currentBeat &&
                                 subIndex + 1 === currentSubdivision
                                 ? ''
                                 : 'bg-white/10'
@@ -1475,6 +1415,22 @@ function App() {
             <div className="mb-8">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-white">Sound Settings</h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={resetPattern}
+                    title="Reset pattern to default (main beat only)"
+                    className="text-xs text-blue-300 hover:text-white border border-blue-300/40 hover:border-white/60 px-3 py-1 rounded-lg transition-colors"
+                  >
+                    Reset pattern
+                  </button>
+                  <button
+                    onClick={resetSoundSettings}
+                    title="Reset all sounds to defaults"
+                    className="text-xs text-blue-300 hover:text-white border border-blue-300/40 hover:border-white/60 px-3 py-1 rounded-lg transition-colors"
+                  >
+                    Reset sounds
+                  </button>
+                </div>
               </div>
 
               {/* Global Volume Control */}
