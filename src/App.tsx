@@ -1288,7 +1288,7 @@ function App() {
                   {Array.from({ length: beatsPerMeasure }).map((_, beatIndex) => (
                     <div key={`beat-${beatIndex}`} className="flex flex-col items-center gap-1.5">
                       <div
-                        className={`w-10 h-10 rounded-full transition-colors ${beatIndex === currentBeat
+                        className={`w-9 h-9 rounded-full transition-colors ${beatIndex === currentBeat
                           ? ''
                           : 'bg-white/20'
                           }`}
@@ -1299,7 +1299,7 @@ function App() {
                           {Array.from({ length: subdivision - 1 }).map((_, subIndex) => (
                             <div
                               key={`sub-${beatIndex}-${subIndex}`}
-                              className={`w-4 h-4 rounded-full transition-colors ${beatIndex === currentBeat &&
+                              className={`w-5 h-5 rounded-full transition-colors ${beatIndex === currentBeat &&
                                 subIndex + 1 === currentSubdivision
                                 ? ''
                                 : 'bg-white/10'
